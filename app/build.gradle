@@ -21,6 +21,23 @@ android {
         }
     }
 
+    signingConfigs {
+        release {
+            storeFile file("../release.keystore")
+            storePassword "password"
+            keyAlias "selinux"
+            keyPassword "password"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
     }
