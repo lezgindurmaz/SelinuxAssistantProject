@@ -5,3 +5,4 @@ app/build/
 .cxx
 .externalNativeBuild
 *.log
+local.properties

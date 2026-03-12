@@ -38,7 +38,7 @@ extern "C" {
 //  hashFile  → JSON: { "sha256":"...", "md5":"..." }
 // ══════════════════════════════════════════════════════
 JNIEXPORT jstring JNICALL
-Java_com_yourapp_engine_AVEngine_hashFile(
+Java_com_selinux_assistant_engine_AVEngine_hashFile(
         JNIEnv* env, jobject /* this */, jstring jFilePath) {
 
     std::string path = fromJString(env, jFilePath);
@@ -60,7 +60,7 @@ Java_com_yourapp_engine_AVEngine_hashFile(
 //  scanFile  → JSON: { "threatLevel":0, "threatName":"", "source":"clean" }
 // ══════════════════════════════════════════════════════
 JNIEXPORT jstring JNICALL
-Java_com_yourapp_engine_AVEngine_scanFile(
+Java_com_selinux_assistant_engine_AVEngine_scanFile(
         JNIEnv* env, jobject /* this */, jstring jFilePath) {
 
     std::string path = fromJString(env, jFilePath);
@@ -90,7 +90,7 @@ Java_com_yourapp_engine_AVEngine_scanFile(
 //  progressCallback: Kotlin arayüzü, her dosyada çağrılır
 // ══════════════════════════════════════════════════════
 JNIEXPORT jstring JNICALL
-Java_com_yourapp_engine_AVEngine_scanDirectory(
+Java_com_selinux_assistant_engine_AVEngine_scanDirectory(
         JNIEnv* env, jobject thiz,
         jstring jDirPath, jobject jCallback) {
 
@@ -149,7 +149,7 @@ Java_com_yourapp_engine_AVEngine_scanDirectory(
 static Scanner* g_activeScanner = nullptr;
 
 JNIEXPORT void JNICALL
-Java_com_yourapp_engine_AVEngine_cancelScan(JNIEnv*, jobject) {
+Java_com_selinux_assistant_engine_AVEngine_cancelScan(JNIEnv*, jobject) {
     if (g_activeScanner) {
         g_activeScanner->cancelScan();
     }

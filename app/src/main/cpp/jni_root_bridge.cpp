@@ -21,7 +21,7 @@ extern "C" {
 // ══════════════════════════════════════════════════════════
 
 JNIEXPORT jstring JNICALL
-Java_com_yourapp_engine_RootDetector_fullScan(
+Java_com_selinux_assistant_engine_RootDetector_fullScan(
         JNIEnv* env, jobject /* this */,
         jboolean deepKernel,
         jboolean tolerateDev)
@@ -38,7 +38,7 @@ Java_com_yourapp_engine_RootDetector_fullScan(
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_yourapp_engine_RootDetector_quickScan(
+Java_com_selinux_assistant_engine_RootDetector_quickScan(
         JNIEnv* env, jobject /* this */)
 {
     DetectorConfig config;
@@ -65,14 +65,14 @@ Java_com_yourapp_engine_RootDetector_quickScan(
 
 // Kotlin tarafında boolean sorgular için ek kolaylık metotları
 JNIEXPORT jboolean JNICALL
-Java_com_yourapp_engine_RootDetector_isRooted(JNIEnv*, jobject) {
+Java_com_selinux_assistant_engine_RootDetector_isRooted(JNIEnv*, jobject) {
     RootDetector detector;
     auto report = detector.fullScan();
     return static_cast<jboolean>(report.isRooted);
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_yourapp_engine_RootDetector_isBootloaderUnlocked(JNIEnv*, jobject) {
+Java_com_selinux_assistant_engine_RootDetector_isBootloaderUnlocked(JNIEnv*, jobject) {
     DetectorConfig config;
     config.deepKernelCheck = false;
     RootDetector detector(config);
