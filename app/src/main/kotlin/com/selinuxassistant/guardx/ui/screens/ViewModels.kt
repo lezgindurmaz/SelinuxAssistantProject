@@ -186,10 +186,10 @@ class BehaviorViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _state.value = BehaviorState.Scanning(0, durationMs)
 
-            // Progress updates for the UI
             val startTime = System.currentTimeMillis()
 
-            coroutineScope {
+            // We use supervisorScope to ensure ticker and repo scan are independent but manageable
+            supervisorScope {
                 val ticker = launch {
                     while (isActive) {
                         val elapsed = (System.currentTimeMillis() - startTime).toInt()
@@ -198,17 +198,21 @@ class BehaviorViewModel(app: Application) : AndroidViewModel(app) {
                             break
                         }
                         _state.value = BehaviorState.Scanning(elapsed, durationMs)
-                        delay(100)
+                        delay(250) // Reduce update frequency for stability
                     }
                 }
 
                 val result = runCatching {
+                    // Native call is blocking, it should respect durationMs internally
                     repo.scanProcesses(durationMs)
                 }
 
                 ticker.cancel()
 
                 result.onSuccess {
+                    // Ensure the final state reflects the full duration
+                    _state.value = BehaviorState.Scanning(durationMs, durationMs)
+                    delay(100)
                     SecurityState.updateBehavior(it)
                     _state.value = BehaviorState.Done(it)
                 }.onFailure {

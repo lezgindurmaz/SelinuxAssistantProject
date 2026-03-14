@@ -13,7 +13,7 @@
 #include <cstdint>
 #include <ctime>
 
-namespace AntiVirus { bool initSelfProtection();
+namespace AntiVirus {
 
 // ══════════════════════════════════════════════════════════════════
 //  Davranış kategorileri (bitmask)
@@ -45,7 +45,7 @@ enum BehaviorFlag : uint64_t {
     // ── Süreç manipülasyonu ──────────────────────────────────────
     BEH_SHELL_SPAWN           = (1ULL << 13), // sh/bash/dash exec
     BEH_SUSPICIOUS_EXEC       = (1ULL << 14), // /data/local/tmp exec
-    METHOD_PTRACE_ATTACH         = (1ULL << 15), // Başka süreci izle
+    BEH_PTRACE_ATTACH         = (1ULL << 15), // Başka süreci izle
     BEH_SIGNAL_FLOOD          = (1ULL << 16), // Yoğun kill()
 
     // ── Dosya sistemi ────────────────────────────────────────────
@@ -222,19 +222,19 @@ struct BehaviorReport {
 //  İzleme yöntemi
 // ══════════════════════════════════════════════════════════════════
 enum class MonitorMethod {
-    METHOD_PTRACE_ATTACH,
-    METHOD_PTRACE_FORK,
-    METHOD_PROC_POLL,
-    METHOD_SECCOMP_SELF,
+    PTRACE_ATTACH,
+    PTRACE_FORK,
+    PROC_POLL,
+    SECCOMP_SELF,
 };
 
 // ══════════════════════════════════════════════════════════════════
 //  Analiz konfigürasyonu
 // ══════════════════════════════════════════════════════════════════
 struct BehaviorConfig {
-    MonitorMethod method          = MonitorMethod::METHOD_PROC_POLL;
+    MonitorMethod method          = MonitorMethod::PROC_POLL;
     uint32_t      durationMs      = 5000;
-    uint32_t      pollIntervalUs  = 1000;   // 3ms (daha duyarlı)
+    uint32_t      pollIntervalUs  = 3000;   // 3ms (daha duyarlı)
     uint32_t      windowSize      = 512;    // Daha geniş sliding window
     uint32_t      riskThreshold   = 30;
     bool          followChildren  = true;
@@ -285,7 +285,6 @@ private:
     void updateRiskScore(ProcessProfile& profile);
 
     // Yardımcılar
-    void   addFindingInternal(ProcessProfile& p, BehaviorFlag flag, const std::string& msg, uint8_t severity);
     bool   attachProcess    (pid_t pid);
     void   detachProcess    (pid_t pid);
     bool   readSyscallEntry (pid_t pid, SyscallEvent& ev);

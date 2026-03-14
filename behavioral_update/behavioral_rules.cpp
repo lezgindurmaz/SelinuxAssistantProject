@@ -32,8 +32,6 @@
 #include <chrono>
 #include <algorithm>
 #include <android/log.h>
-#include <unistd.h>
-#include <sys/prctl.h>
 
 #define LOG_TAG "AV_Rules"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
@@ -65,9 +63,7 @@ static constexpr uint32_t APATCH_MAGIC_IOCTL    = 0xdeadc0deU;
 static constexpr uint64_t APATCH_MAGIC_ARG      = 0xdeadbeefULL;
 
 // prctl komutları (sys/prctl.h'de eksik olanlar)
-#ifndef PR_SET_VMA
 static constexpr int PR_SET_VMA              = 0x53564d41; // Android VMA label
-#endif
 
 // ──────────────────────────────────────────────────────────────────
 //  Statik kural tablosu
@@ -181,6 +177,19 @@ const BehaviorRule* BehavioralAnalyzer::getDefaultRules(size_t& count) {
     return DEFAULT_RULES;
 }
 
+// ──────────────────────────────────────────────────────────────────
+//  addFinding yardımcısı
+// ──────────────────────────────────────────────────────────────────
+static void addFinding(ProcessProfile& p, BehaviorFlag flag,
+                       const std::string& msg, uint8_t severity) {
+    p.behaviorFlags |= static_cast<uint64_t>(flag);
+    std::string entry = "[sev=" + std::to_string(severity) + "] " + msg;
+    // Aynı mesajı tekrar ekleme
+    for (const auto& f : p.findings)
+        if (f == entry) return;
+    p.findings.push_back(entry);
+    LOGW("BEH [pid=%d sev=%d]: %s", p.pid, severity, msg.c_str());
+}
 
 // ══════════════════════════════════════════════════════════════════
 //  processEvent — Tek syscall olayını işle
@@ -238,7 +247,7 @@ void BehavioralAnalyzer::applyRules(const SyscallEvent& ev,
 
         if (profile.behaviorFlags & static_cast<uint64_t>(rule->flag)) continue;
 
-        addFindingInternal(profile, rule->flag,
+        addFinding(profile, rule->flag,
                    std::string(rule->name) + ": " +
                    syscallName(ev.syscallNr, m_isArm64) +
                    "(0x" + [](uint64_t v) {
@@ -262,7 +271,7 @@ void BehavioralAnalyzer::checkWXMemory(const SyscallEvent& ev,
         uint64_t len  = ev.args[1];
 
         if ((prot & PROT_WRITE) && (prot & PROT_EXEC)) {
-            addFindingInternal(profile, BEH_WX_MEMORY,
+            addFinding(profile, BEH_WX_MEMORY,
                        "mmap(W|X): shellcode alanı: addr=0x" +
                        [&](){ char b[32]; snprintf(b,32,"%lx",(unsigned long)addr); return std::string(b); }() +
                        " len=" + std::to_string(len), 10);
@@ -282,14 +291,14 @@ void BehavioralAnalyzer::checkWXMemory(const SyscallEvent& ev,
         for (const auto& pg : pages) {
             bool overlaps = (addr < pg.addr + pg.len) && (addr + len > pg.addr);
             if (overlaps && (pg.prot & PROT_WRITE)) {
-                addFindingInternal(profile, BEH_WX_MEMORY,
+                addFinding(profile, BEH_WX_MEMORY,
                            "mprotect W→X: shellcode inject! addr=0x" +
                            [&](){ char b[32]; snprintf(b,32,"%lx",(unsigned long)addr); return std::string(b); }(),
                            10);
                 return;
             }
         }
-        addFindingInternal(profile, BEH_WX_MEMORY,
+        addFinding(profile, BEH_WX_MEMORY,
                    "mprotect(EXEC) bilinmeyen sayfa: 0x" +
                    [&](){ char b[32]; snprintf(b,32,"%lx",(unsigned long)addr); return std::string(b); }(),
                    6);
@@ -307,7 +316,7 @@ void BehavioralAnalyzer::checkFilelessExec(const SyscallEvent& ev,
 
     if (ev.syscallNr == Arm64::MEMFD_CREATE ||
         ev.syscallNr == Arm32::MEMFD_CREATE) {
-        addFindingInternal(profile, BEH_FILELESS_EXEC,
+        addFinding(profile, BEH_FILELESS_EXEC,
                    "memfd_create(): fileless exec hazırlığı", 7);
         return;
     }
@@ -315,14 +324,14 @@ void BehavioralAnalyzer::checkFilelessExec(const SyscallEvent& ev,
     // execveat ile memfd fd'si üzerinden direkt çalıştırma
     if ((ev.syscallNr == Arm64::EXECVEAT || ev.syscallNr == Arm32::EXECVEAT)
         && hadMemfd) {
-        addFindingInternal(profile, BEH_FILELESS_EXEC,
+        addFinding(profile, BEH_FILELESS_EXEC,
                    "execveat(memfd): DOSYASIZ YÜRÜTME tespit edildi!", 10);
         return;
     }
 
     if (hadMemfd && hadWrite &&
         (ev.syscallNr == Arm64::EXECVE || ev.syscallNr == Arm32::EXECVE)) {
-        addFindingInternal(profile, BEH_FILELESS_EXEC,
+        addFinding(profile, BEH_FILELESS_EXEC,
                    "memfd_create → write → execve: DOSYASIZ YÜRÜTME!", 10);
     }
 }
@@ -334,27 +343,27 @@ void BehavioralAnalyzer::checkPrivEscalation(const SyscallEvent& ev,
                                               ProcessProfile& profile) {
     if ((ev.syscallNr == Arm64::SETUID || ev.syscallNr == Arm32::SETUID)
         && ev.args[0] == 0) {
-        addFindingInternal(profile, BEH_SETUID_ATTEMPT, "setuid(0): root yetki girişimi!", 9);
+        addFinding(profile, BEH_SETUID_ATTEMPT, "setuid(0): root yetki girişimi!", 9);
         return;
     }
 
     if (ev.syscallNr == Arm64::SETRESUID
         && ev.args[0] == 0 && ev.args[1] == 0 && ev.args[2] == 0) {
-        addFindingInternal(profile, BEH_SETUID_ATTEMPT,
+        addFinding(profile, BEH_SETUID_ATTEMPT,
                    "setresuid(0,0,0): kapsamlı root yetki girişimi!", 10);
         return;
     }
 
     if (ev.syscallNr == Arm64::CAPSET || ev.syscallNr == Arm32::CAPSET)
-        addFindingInternal(profile, BEH_CAPSET_ESCALATION,
+        addFinding(profile, BEH_CAPSET_ESCALATION,
                    "capset(): kernel capability manipülasyonu", 8);
 
     if (ev.syscallNr == Arm64::PIVOT_ROOT)
-        addFindingInternal(profile, BEH_NAMESPACE_ESCAPE,
+        addFinding(profile, BEH_NAMESPACE_ESCAPE,
                    "pivot_root(): kök dizin değiştirme — container kaçışı!", 10);
 
     if (ev.syscallNr == Arm64::CHROOT)
-        addFindingInternal(profile, BEH_NAMESPACE_ESCAPE,
+        addFinding(profile, BEH_NAMESPACE_ESCAPE,
                    "chroot(): çalışma kökünü değiştirme", 8);
 }
 
@@ -366,17 +375,17 @@ void BehavioralAnalyzer::checkKernelExploit(const SyscallEvent& ev,
     if (ev.syscallNr == Arm64::INIT_MODULE   ||
         ev.syscallNr == Arm64::FINIT_MODULE  ||
         ev.syscallNr == Arm32::FINIT_MODULE) {
-        addFindingInternal(profile, BEH_KERNEL_MODULE_LOAD,
+        addFinding(profile, BEH_KERNEL_MODULE_LOAD,
                    "Kernel modülü yükleme (init/finit_module)!", 10);
         return;
     }
 
     if (ev.syscallNr == Arm64::BPF || ev.syscallNr == Arm32::BPF) {
         if (ev.args[0] == 5) {  // BPF_PROG_LOAD
-            addFindingInternal(profile, BEH_BPF_PROG_LOAD,
+            addFinding(profile, BEH_BPF_PROG_LOAD,
                        "bpf(BPF_PROG_LOAD): eBPF program yükleme!", 9);
         } else if (ev.args[0] == 0) { // BPF_MAP_CREATE
-            addFindingInternal(profile, BEH_BPF_PROG_LOAD,
+            addFinding(profile, BEH_BPF_PROG_LOAD,
                        "bpf(BPF_MAP_CREATE): eBPF map oluşturma", 6);
         }
         return;
@@ -384,23 +393,23 @@ void BehavioralAnalyzer::checkKernelExploit(const SyscallEvent& ev,
 
     if (ev.syscallNr == Arm64::IO_URING_SETUP ||
         ev.syscallNr == Arm32::IO_URING_SETUP) {
-        addFindingInternal(profile, BEH_IO_URING_EXPLOIT,
+        addFinding(profile, BEH_IO_URING_EXPLOIT,
                    "io_uring_setup(): Android'de exploit vektörü", 7);
         return;
     }
 
     if (ev.syscallNr == Arm64::USERFAULTFD)
-        addFindingInternal(profile, BEH_USERFAULTFD_EXPLOIT,
+        addFinding(profile, BEH_USERFAULTFD_EXPLOIT,
                    "userfaultfd(): race condition exploit şüphesi", 7);
 
     if (ev.syscallNr == Arm64::PERF_EVENT_OPEN ||
         ev.syscallNr == Arm32::PERF_EVENT_OPEN)
-        addFindingInternal(profile, BEH_PERF_EXPLOIT,
+        addFinding(profile, BEH_PERF_EXPLOIT,
                    "perf_event_open(): kernel exploit vektörü", 7);
 
     // kexec — kernel'ı değiştirme
     if (ev.syscallNr == Arm64::KEXEC_LOAD || ev.syscallNr == Arm64::KEXEC_FILE_LOAD)
-        addFindingInternal(profile, BEH_KERNEL_MODULE_LOAD,
+        addFinding(profile, BEH_KERNEL_MODULE_LOAD,
                    "kexec: kernel değiştirme girişimi!", 10);
 
     // Heap spray
@@ -410,7 +419,7 @@ void BehavioralAnalyzer::checkKernelExploit(const SyscallEvent& ev,
         uint64_t now = ev.timestamp_ns;
         if (now - lastMmapTs < 100000000ULL) {
             if (++mmapCount > 50 && ev.args[1] > 65536) {
-                addFindingInternal(profile, BEH_HEAP_SPRAY,
+                addFinding(profile, BEH_HEAP_SPRAY,
                            "Heap spray: " + std::to_string(mmapCount) +
                            " büyük mmap/100ms", 8);
                 mmapCount = 0;
@@ -437,7 +446,7 @@ void BehavioralAnalyzer::checkShellSpawn(const SyscallEvent& ev,
     };
     for (int i = 0; SHELLS[i]; ++i) {
         if (strstr(ev.comm, SHELLS[i])) {
-            addFindingInternal(profile, BEH_SHELL_SPAWN,
+            addFinding(profile, BEH_SHELL_SPAWN,
                        std::string("Shell spawn: ") + ev.comm, 8);
             return;
         }
@@ -452,7 +461,7 @@ void BehavioralAnalyzer::checkShellSpawn(const SyscallEvent& ev,
         };
         for (int i = 0; SUSP_PATHS[i]; ++i) {
             if (strstr(exePath, SUSP_PATHS[i])) {
-                addFindingInternal(profile, BEH_SUSPICIOUS_EXEC,
+                addFinding(profile, BEH_SUSPICIOUS_EXEC,
                            std::string("Şüpheli konumdan exec: ") + exePath, 8);
                 return;
             }
@@ -480,7 +489,7 @@ void BehavioralAnalyzer::checkDataExfil(const SyscallEvent& ev,
             }
         }
         if (hadSensitiveRead && profile.sendCount > 3 && profile.bytesSent > 8192) {
-            addFindingInternal(profile, BEH_DATA_EXFIL_PATTERN,
+            addFinding(profile, BEH_DATA_EXFIL_PATTERN,
                        "Veri sızdırma: " + std::to_string(profile.bytesSent) +
                        " byte, " + std::to_string(profile.sendCount) + " gönderim", 7);
         }
@@ -493,29 +502,29 @@ void BehavioralAnalyzer::checkDataExfil(const SyscallEvent& ev,
 void BehavioralAnalyzer::checkAntiDebug(const SyscallEvent& ev,
                                          ProcessProfile& profile) {
     if (ev.syscallNr == Arm64::PTRACE || ev.syscallNr == Arm32::PTRACE) {
-        if      (ev.args[0] == 0)  addFindingInternal(profile, BEH_ANTI_DEBUG,
+        if      (ev.args[0] == 0)  addFinding(profile, BEH_ANTI_DEBUG,
             "ptrace(TRACEME): anti-debug tekniği", 7);
-        else if (ev.args[0] == 4)  addFindingInternal(profile, METHOD_PTRACE_ATTACH,
+        else if (ev.args[0] == 4)  addFinding(profile, BEH_PTRACE_ATTACH,
             "ptrace(ATTACH, pid=" + std::to_string(ev.args[1]) + ")", 9);
         else if (ev.args[0] == 5 || ev.args[0] == 6)
-            addFindingInternal(profile, BEH_PTRACE_INJECTION,
+            addFinding(profile, BEH_PTRACE_INJECTION,
             "ptrace(POKE): kod enjeksiyonu!", 10);
         return;
     }
 
     if (ev.syscallNr == Arm64::PRCTL || ev.syscallNr == Arm32::PRCTL) {
         if (ev.args[0] == PR_SET_DUMPABLE && ev.args[1] == 0)
-            addFindingInternal(profile, BEH_ANTI_DEBUG,
+            addFinding(profile, BEH_ANTI_DEBUG,
                        "prctl(SET_DUMPABLE,0): analiz engelleme", 5);
         if (ev.args[0] == PR_SET_NAME)
-            addFindingInternal(profile, BEH_PROC_HIDE,
+            addFinding(profile, BEH_PROC_HIDE,
                        "prctl(SET_NAME): süreç adı gizleme", 4);
     }
 
     static thread_local int sleepCount = 0;
     if (ev.syscallNr == 35 || ev.syscallNr == 162) {  // nanosleep
         if (++sleepCount > 20) {
-            addFindingInternal(profile, BEH_TIMING_EVASION,
+            addFinding(profile, BEH_TIMING_EVASION,
                        "Yoğun nanosleep: " + std::to_string(sleepCount) + " çağrı", 5);
             sleepCount = 0;
         }
@@ -530,14 +539,14 @@ void BehavioralAnalyzer::checkNetworkAbuse(const SyscallEvent& ev,
     if (ev.syscallNr == Arm64::SOCKET || ev.syscallNr == Arm32::SOCKET) {
         int sockType = static_cast<int>(ev.args[1]) & ~SOCK_NONBLOCK & ~SOCK_CLOEXEC;
         if (sockType == SOCK_RAW)
-            addFindingInternal(profile, BEH_RAW_SOCKET,
+            addFinding(profile, BEH_RAW_SOCKET,
                        "SOCK_RAW: paket enjeksiyon/sniff", 7);
         ++profile.connectCount;
     }
 
     if (ev.syscallNr == Arm64::CONNECT || ev.syscallNr == Arm32::CONNECT) {
         if (++profile.connectCount > 150)
-            addFindingInternal(profile, BEH_DNS_FLOOD,
+            addFinding(profile, BEH_DNS_FLOOD,
                        "Bağlantı patlaması: " + std::to_string(profile.connectCount), 7);
     }
 }
@@ -557,7 +566,7 @@ void BehavioralAnalyzer::checkSyscallRate(ProcessProfile& profile) {
     profile.syscallRatePerSec = rate;
 
     if (rate > 50000.0)
-        addFindingInternal(profile, BEH_SYSCALL_FLOOD,
+        addFinding(profile, BEH_SYSCALL_FLOOD,
                    "Syscall anomalisi: " + std::to_string((int)rate) + "/sn", 8);
 }
 
@@ -584,7 +593,7 @@ void BehavioralAnalyzer::checkKernelSuProbe(const SyscallEvent& ev,
 
     // KernelSU varlık testi
     if (cmd == KSU_MAGIC_PRCTL_CMD || cmd == KSU_MAGIC_PRCTL_CMD2) {
-        addFindingInternal(profile, BEH_KERNELSU_PROBE,
+        addFinding(profile, BEH_KERNELSU_PROBE,
                    "prctl(0x" +
                    [&](){ char b[32]; snprintf(b,32,"%x",(unsigned)cmd); return std::string(b); }() +
                    "): KernelSU/APatch root probe! arg1=0x" +
@@ -596,14 +605,14 @@ void BehavioralAnalyzer::checkKernelSuProbe(const SyscallEvent& ev,
     // PR_SET_VMA ile KSU magic ("VkSU" / "SKsU")
     if (cmd == (uint64_t)PR_SET_VMA &&
         (arg1 == KSU_MAGIC_ARG_GRANT || arg2 == KSU_MAGIC_ARG_GRANT)) {
-        addFindingInternal(profile, BEH_KERNELSU_PROBE,
+        addFinding(profile, BEH_KERNELSU_PROBE,
                    "prctl(PR_SET_VMA, KSU_MAGIC): KernelSU root grant hazırlığı!", 10);
         return;
     }
 
     // Bilinmeyen yüksek magic değer — genel SU backdoor şüphesi
     if (cmd > 0xffff0000ULL && cmd != 0xffffffffULL) {
-        addFindingInternal(profile, BEH_SU_PRCTL_BACKDOOR,
+        addFinding(profile, BEH_SU_PRCTL_BACKDOOR,
                    "prctl bilinmeyen magic: 0x" +
                    [&](){ char b[32]; snprintf(b,32,"%lx",(unsigned long)cmd); return std::string(b); }() +
                    " (gizli SU backdoor?)", 8);
@@ -634,14 +643,14 @@ void BehavioralAnalyzer::checkAPatchProbe(const SyscallEvent& ev,
 
         // APatch magic ioctl
         if (request == APATCH_MAGIC_IOCTL || arg == APATCH_MAGIC_ARG) {
-            addFindingInternal(profile, BEH_APATCH_PROBE,
+            addFinding(profile, BEH_APATCH_PROBE,
                        "ioctl(APATCH_MAGIC=0xdeadc0de): APatch SU erişimi!", 10);
             return;
         }
 
         // /dev/apd için bilinen ioctl kodları (0xa0xx range)
         if ((request & 0xffffff00ULL) == 0xa0000000ULL) {
-            addFindingInternal(profile, BEH_APATCH_PROBE,
+            addFinding(profile, BEH_APATCH_PROBE,
                        "ioctl suspect range (APatch device?): 0x" +
                        [&](){ char b[32]; snprintf(b,32,"%lx",(unsigned long)request); return std::string(b); }(),
                        7);
@@ -672,7 +681,7 @@ void BehavioralAnalyzer::checkProcMemInject(const SyscallEvent& ev,
                     if (ev.args[0] == past.retval && past.retval > 0) {
                         // Bu bir /proc/mem fd'si olabilir
                         // Risk: çapraz kontrol /proc/pid/fd'den yapılmalı
-                        addFindingInternal(profile, BEH_PROC_MEM_INJECT,
+                        addFinding(profile, BEH_PROC_MEM_INJECT,
                                    "/proc/pid/mem şüpheli write — ptrace'siz inject girişimi?",
                                    8);
                         break;
@@ -699,7 +708,7 @@ void BehavioralAnalyzer::checkInputHijack(const SyscallEvent& ev,
         profile.syscallCounts.at(Arm64::READ) > 5000) {
         // Yüksek frekanslı okuma + ioctl kombinasyonu = şüpheli
         if (profile.syscallCounts.count(Arm64::IOCTL)) {
-            addFindingInternal(profile, BEH_INPUT_HIJACK,
+            addFinding(profile, BEH_INPUT_HIJACK,
                        "Yüksek frekanslı READ + IOCTL: keylogger şüphesi", 7);
         }
     }
@@ -723,7 +732,7 @@ void BehavioralAnalyzer::checkMountHide(const SyscallEvent& ev,
     static const uint64_t MS_MOVE     = 0x2000ULL;  // 8192
 
     if (flags & MS_BIND) {
-        addFindingInternal(profile, BEH_MOUNT_BIND_HIDE,
+        addFinding(profile, BEH_MOUNT_BIND_HIDE,
                    "mount(--bind, flags=0x" +
                    [&](){ char b[32]; snprintf(b,32,"%lx",(unsigned long)flags); return std::string(b); }() +
                    "): Magisk/KSU tarzı gizleme!", 9);
@@ -731,13 +740,13 @@ void BehavioralAnalyzer::checkMountHide(const SyscallEvent& ev,
     }
 
     if (flags & MS_MOVE) {
-        addFindingInternal(profile, BEH_OVERLAY_TMPFS,
+        addFinding(profile, BEH_OVERLAY_TMPFS,
                    "mount(MS_MOVE): dosya sistemi taşıma — overlay kurulumu?", 7);
         return;
     }
 
     // Herhangi bir mount (uygulama seviyesinde asla olmamalı)
-    addFindingInternal(profile, BEH_MOUNT_BIND_HIDE,
+    addFinding(profile, BEH_MOUNT_BIND_HIDE,
                "mount() çağrısı: normal uygulama mount yapamaz!", 8);
 }
 
@@ -764,7 +773,7 @@ void BehavioralAnalyzer::checkZygoteInject(const SyscallEvent& ev,
         if (n > 0) {
             comm[n] = '\0';
             if (strstr(comm, "zygote") || strstr(comm, "zygote64")) {
-                addFindingInternal(profile, BEH_ZYGOTE_INJECT,
+                addFinding(profile, BEH_ZYGOTE_INJECT,
                            std::string("ptrace(ATTACH) ZYGOTE'ye: ") + comm +
                            " (pid=" + std::to_string(targetPid) + ") — TÜM UYGULAMALAR TEHLİKEDE!",
                            10);
@@ -775,7 +784,7 @@ void BehavioralAnalyzer::checkZygoteInject(const SyscallEvent& ev,
 
     // system_server inject tespiti
     if (strstr(comm, "system_server")) {
-        addFindingInternal(profile, BEH_ZYGOTE_INJECT,
+        addFinding(profile, BEH_ZYGOTE_INJECT,
                    "ptrace(ATTACH) system_server'a! Sistem hakimiyet girişimi!",
                    10);
     }
@@ -803,7 +812,7 @@ void BehavioralAnalyzer::checkDangerousIoctl(const SyscallEvent& ev,
         // Binder aralığı — yüksek frekanslı binder şüphe işareti
         static thread_local int binderCount = 0;
         if (++binderCount > 1000) {
-            addFindingInternal(profile, BEH_DANGEROUS_IOCTL,
+            addFinding(profile, BEH_DANGEROUS_IOCTL,
                        "Yoğun Binder ioctl: " + std::to_string(binderCount) +
                        " çağrı (IPC manipülasyon?)", 5);
             binderCount = 0;
@@ -815,7 +824,7 @@ void BehavioralAnalyzer::checkDangerousIoctl(const SyscallEvent& ev,
     // KGSL: 0x0900xx, Mali: 0x4d00xx
     if ((request & 0xffff0000ULL) == 0x09000000ULL ||
         (request & 0xffff0000ULL) == 0x4d000000ULL) {
-        addFindingInternal(profile, BEH_DANGEROUS_IOCTL,
+        addFinding(profile, BEH_DANGEROUS_IOCTL,
                    "GPU ioctl (kgsl/mali): GPU bellek exploit vektörü? 0x" +
                    [&](){ char b[32]; snprintf(b,32,"%lx",(unsigned long)request); return std::string(b); }(),
                    6);
@@ -825,7 +834,7 @@ void BehavioralAnalyzer::checkDangerousIoctl(const SyscallEvent& ev,
     // DMA-BUF ioctl — sıklıkla exploit'te kullanılır
     // DMA_BUF_IOCTL_SYNC = 0x40086200
     if ((request & 0x0000ff00ULL) == 0x00006200ULL && request > 0x40000000ULL) {
-        addFindingInternal(profile, BEH_DANGEROUS_IOCTL,
+        addFinding(profile, BEH_DANGEROUS_IOCTL,
                    "DMA-BUF ioctl: çekirdek bellek senkronizasyon exploit şüphesi", 7);
     }
 }
@@ -859,10 +868,10 @@ void BehavioralAnalyzer::checkSeccompProbe(const SyscallEvent& ev,
     // arg0 = operation
     // SECCOMP_SET_MODE_FILTER = 1
     if (ev.args[0] == 1) {
-        addFindingInternal(profile, BEH_SECCOMP_PROBE,
+        addFinding(profile, BEH_SECCOMP_PROBE,
                    "seccomp(SET_MODE_FILTER): özel BPF filtre kuruluyor!", 8);
     } else if (ev.args[0] == 0) {
-        addFindingInternal(profile, BEH_SECCOMP_PROBE,
+        addFinding(profile, BEH_SECCOMP_PROBE,
                    "seccomp(SET_MODE_STRICT): sıkı mode etkinleşiyor", 5);
     }
 }
@@ -878,13 +887,13 @@ void BehavioralAnalyzer::checkCgroupEscape(const SyscallEvent& ev,
         // CLONE_NEWPID   = 0x20000000
         uint64_t flags = ev.args[0];
         if (flags & 0x02000000ULL)
-            addFindingInternal(profile, BEH_CGROUP_ESCAPE,
+            addFinding(profile, BEH_CGROUP_ESCAPE,
                        "unshare(CLONE_NEWCGROUP): cgroup namespace kaçışı!", 9);
         if (flags & 0x00020000ULL)
-            addFindingInternal(profile, BEH_NAMESPACE_ESCAPE,
+            addFinding(profile, BEH_NAMESPACE_ESCAPE,
                        "unshare(CLONE_NEWNS): mount namespace ayrımı", 7);
         if (flags & 0x20000000ULL)
-            addFindingInternal(profile, BEH_NAMESPACE_ESCAPE,
+            addFinding(profile, BEH_NAMESPACE_ESCAPE,
                        "unshare(CLONE_NEWPID): PID namespace ayrımı", 7);
     }
 }
@@ -950,7 +959,7 @@ void BehavioralAnalyzer::checkProcMaps(pid_t pid, ProcessProfile& profile) {
                 std::string libStr(libName);
                 if (!alreadyReported.count(libStr)) {
                     alreadyReported.insert(libStr);
-                    addFindingInternal(profile, BEH_FOREIGN_LIB_INJECT,
+                    addFinding(profile, BEH_FOREIGN_LIB_INJECT,
                                std::string("Şüpheli kütüphane inject: /proc/maps'de ") +
                                libName + " bulundu!",
                                9);
@@ -1009,7 +1018,7 @@ void BehavioralAnalyzer::checkProcStatus(pid_t pid, ProcessProfile& profile) {
 
     // UID değişti mi? (euid 0 a düştü = root kazandı)
     if (prevUid != 0 && (ruid == 0 || euid == 0)) {
-        addFindingInternal(profile, BEH_UID_ESCALATED,
+        addFinding(profile, BEH_UID_ESCALATED,
                    "UID escalation: " + std::to_string(prevUid) +
                    " → " + std::to_string(ruid) +
                    " (euid=" + std::to_string(euid) + ") RUNTIME ROOT KAZANIMI!",
@@ -1062,14 +1071,14 @@ void BehavioralAnalyzer::checkProcFd(pid_t pid, ProcessProfile& profile) {
                 auto& devFds = m_openDevFds[pid];
                 if (!devFds.count(devStr)) {
                     devFds.insert(devStr);
-                    addFindingInternal(profile, BEH_APATCH_PROBE,
+                    addFinding(profile, BEH_APATCH_PROBE,
                                std::string("Tehlikeli cihaz açık: ") + linkBuf +
                                " (pid=" + std::to_string(pid) + ")",
                                10);
                 }
                 // /dev/kallsyms → KASLR bypass girişimi
                 if (strstr(linkBuf, "kallsyms"))
-                    addFindingInternal(profile, BEH_KALLSYMS_READ,
+                    addFinding(profile, BEH_KALLSYMS_READ,
                                "KASLR bypass: /proc/kallsyms okunuyor!", 9);
             }
         }
@@ -1080,7 +1089,7 @@ void BehavioralAnalyzer::checkProcFd(pid_t pid, ProcessProfile& profile) {
             int targetPid = 0;
             sscanf(linkBuf + 6, "%d", &targetPid);
             if (targetPid != 0 && targetPid != pid) {
-                addFindingInternal(profile, BEH_PROC_MEM_INJECT,
+                addFinding(profile, BEH_PROC_MEM_INJECT,
                            std::string("/proc/pid/mem açık: ") + linkBuf +
                            " — ptrace'siz inject!", 9);
             }
@@ -1088,7 +1097,7 @@ void BehavioralAnalyzer::checkProcFd(pid_t pid, ProcessProfile& profile) {
 
         // /dev/input erişimi = keylogger
         if (strstr(linkBuf, "/dev/input/")) {
-            addFindingInternal(profile, BEH_INPUT_HIJACK,
+            addFinding(profile, BEH_INPUT_HIJACK,
                        std::string("Input cihazı açık: ") + linkBuf +
                        " — keylogger?", 8);
             profile.snapshot.openDevFiles.push_back(linkBuf);
@@ -1124,7 +1133,7 @@ void BehavioralAnalyzer::checkProcNet(pid_t pid, ProcessProfile& profile) {
     profile.snapshot.tcpConnectionCount = connCount;
 
     if (connCount > 50) {
-        addFindingInternal(profile, BEH_DATA_EXFIL_PATTERN,
+        addFinding(profile, BEH_DATA_EXFIL_PATTERN,
                    "Yüksek TCP bağlantı sayısı: " + std::to_string(connCount) +
                    " established", 6);
     }
@@ -1178,7 +1187,7 @@ void BehavioralAnalyzer::updateRiskScore(ProcessProfile& profile) {
         { BEH_IO_URING_EXPLOIT,       15 },
         { BEH_SHELL_SPAWN,            20 },
         { BEH_SUSPICIOUS_EXEC,        20 },
-        { METHOD_PTRACE_ATTACH,          20 },
+        { BEH_PTRACE_ATTACH,          20 },
         { BEH_SIGNAL_FLOOD,           10 },
         { BEH_SENSITIVE_READ,         10 },
         { BEH_RAW_SOCKET,             15 },

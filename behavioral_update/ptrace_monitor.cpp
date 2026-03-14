@@ -16,7 +16,6 @@
 #include <sys/wait.h>
 #include <sys/uio.h>
 #include <sys/prctl.h>
-#include <linux/ptrace.h>
 #include <elf.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -34,7 +33,6 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 
 namespace AntiVirus {
 
@@ -150,7 +148,7 @@ bool BehavioralAnalyzer::readSyscallEntry(pid_t pid, SyscallEvent& ev) {
         for (int i = 0; i < 6; ++i) ev.args[i] = regs.regs[i];
     } else {
         Arm32Regs regs{};
-        struct iovec iov = { &regs, sizeof(regs) }; if (ptrace(PTRACE_GETREGSET, pid, reinterpret_cast<void*>(NT_PRSTATUS), &iov) != 0) return false;
+        if (ptrace(PTRACE_GETREGS, pid, nullptr, &regs) != 0) return false;
         // ARM32 EABI: r7 = nr, r0-r5 = args
         ev.syscallNr = regs.regs[7];
         for (int i = 0; i < 6; ++i) ev.args[i] = regs.regs[i];
@@ -282,14 +280,14 @@ BehaviorReport BehavioralAnalyzer::ptraceMonitor(pid_t tracee) {
                     // KernelSU probe sonucu: prctl magic döndü mü?
                     if ((ev.syscallNr == Arm64::PRCTL) && ev.retval == 0 &&
                         (profile.behaviorFlags & (uint64_t)BEH_KERNELSU_PROBE)) {
-                        addFindingInternal(profile, BEH_KERNELSU_PROBE,
+                        addFinding(profile, BEH_KERNELSU_PROBE,
                             "prctl KSU magic BAŞARILI döndü (retval=0): KernelSU AKTİF!",
                             10);
                     }
                 }
             } else {
                 Arm32Regs regs{};
-                struct iovec iov = { &regs, sizeof(regs) }; if (ptrace(PTRACE_GETREGSET, stoppedPid, reinterpret_cast<void*>(NT_PRSTATUS), &iov) == 0)
+                if (ptrace(PTRACE_GETREGS, stoppedPid, nullptr, &regs) == 0)
                     ev.retval = static_cast<long>(regs.regs[0]);
             }
         }
@@ -382,10 +380,8 @@ BehaviorReport BehavioralAnalyzer::procPollMonitor(
     }
 
     m_running.store(true);
-    auto startTime = std::chrono::steady_clock::now();
-    auto deadline  = startTime + std::chrono::milliseconds(m_config.durationMs);
-
-    LOGI("procPollMonitor: %zu süreç için %u ms izleme başlıyor.", pids.size(), m_config.durationMs);
+    auto deadline = std::chrono::steady_clock::now()
+                  + std::chrono::milliseconds(m_config.durationMs);
 
     std::unordered_map<pid_t, uint32_t> lastSyscall;
     int pollTurn = 0;
@@ -443,11 +439,6 @@ BehaviorReport BehavioralAnalyzer::procPollMonitor(
 
         usleep(m_config.pollIntervalUs);
     }
-
-    auto endTime = std::chrono::steady_clock::now();
-    uint32_t actualDuration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-    LOGI("procPollMonitor: İzleme bitti. Gerçek süre: %u ms", actualDuration);
-    report.durationMs = actualDuration;
 
     m_running.store(false);
 
@@ -534,19 +525,21 @@ BehaviorReport BehavioralAnalyzer::analyzeCommand(
 // ══════════════════════════════════════════════════════════════════
 BehaviorReport BehavioralAnalyzer::analyzeProcess(pid_t pid) {
     switch (m_config.method) {
-        case MonitorMethod::METHOD_PTRACE_ATTACH:
+        case MonitorMethod::PTRACE_ATTACH:
             return ptraceMonitor(pid);
-        case MonitorMethod::METHOD_PROC_POLL:
+        case MonitorMethod::PROC_POLL:
         default:
             return procPollMonitor({pid});
     }
 }
 
 // ──────────────────────────────────────────────────────────────────
-//  addFinding: behavioral_rules.cpp'de de kullanılıyor
+//  addFinding: behavioral_rules.cpp'de de kullanılıyor,
+//  burada static olmadığından sadece friend erişimi gerekiyor.
+//  behavioral_rules.cpp'deki static addFinding yeterlidir.
 // ──────────────────────────────────────────────────────────────────
-void BehavioralAnalyzer::addFindingInternal(ProcessProfile& p, BehaviorFlag flag,
-                                             const std::string& msg, uint8_t severity) {
+static void addFinding(ProcessProfile& p, BehaviorFlag flag,
+                       const std::string& msg, uint8_t severity) {
     p.behaviorFlags |= static_cast<uint64_t>(flag);
     std::string entry = "[sev=" + std::to_string(severity) + "] " + msg;
     for (const auto& f : p.findings)
