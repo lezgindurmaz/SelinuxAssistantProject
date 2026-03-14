@@ -101,9 +101,10 @@ void RootDetector::checkSELinux(DetectionReport& report) {
                         "SELinux permissive moda alınmış!", 9);
         }
     } else {
-        // Dosya yoksa selinux tamamen disabled
+        // Dosya yoksa veya erişilemiyorsa (modern Android'lerde yetki kısıtı) -> Şüpheli (Sarı)
+        // Ağırlığı düşük tutalım ki tek başına alarm vermesin ama skoru etkilesin.
         addEvidence(report, DETECT_SELINUX_DISABLED,
-                    "/sys/fs/selinux/enforce erişilemiyor (disabled?)", 7);
+                    "SELinux durumu belirlenemedi (Erişim kısıtlı/Disabled)", 3);
     }
 
     // /sys/fs/selinux/status çift kontrol

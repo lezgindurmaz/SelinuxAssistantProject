@@ -142,7 +142,7 @@ ScanResult Scanner::scanFile(const std::string& filePath) {
 
     // ── 1. Lokal DB sorgusu ──────────────────
     if (m_config.useLocalDB) {
-        LocalDB localDB("/data/data/com.selinuxassistant.guardx/files/signatures.db");
+        LocalDB localDB("/data/data/com.selinuxassistant.guardx/files/signatures.bin");
         if (localDB.open()) {
             auto record = localDB.lookupBySHA256(result.hashes.sha256);
             if (!record) record = localDB.lookupByMD5(result.hashes.md5);

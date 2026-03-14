@@ -152,6 +152,19 @@ static const BehaviorRule DEFAULT_RULES[] = {
         SOCK_RAW,
         0, 0
     },
+    {
+        "Suspicious_Listen",
+        BEH_RAW_SOCKET, 6,
+        Arm64::LISTEN,
+        0, 0, 0, 0
+    },
+    // ── Dosya Sistemi ──────────────────────────────────
+    {
+        "Sensitive_Dir_Watch",
+        BEH_INOTIFY_SENSITIVE, 6,
+        Arm64::INOTIFY_ADD_WATCH,
+        0, 0, 0, 0
+    },
     // sentinel
     { nullptr, BEH_NONE, 0, 0, 0, 0, 0, 0 }
 };

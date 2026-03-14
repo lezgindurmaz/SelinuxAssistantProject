@@ -34,14 +34,22 @@ class ScanRepository(private val context: Context) {
         onProgress: (done: Int, total: Int, pkg: String) -> Unit
     ): Flow<List<ApkReport>> = flow {
         val pm = context.packageManager
+        // Sadece kullanıcı uygulamalarını veya şüpheli sistem uygulamalarını filtreleyebiliriz ama ister tüm uygulamalar.
         val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
         val results = mutableListOf<ApkReport>()
         apps.forEachIndexed { i, app ->
-            onProgress(i + 1, apps.size, app.packageName)
+            val label = app.loadLabel(pm).toString()
+            onProgress(i + 1, apps.size, label)
+
             val json = runCatching {
-                NativeEngine.analyzeInstalledApp(app.packageName)
-            }.getOrElse { "{\"verdict\":\"ERROR\"}" }
-            runCatching { results.add(ApkReport.fromJson(json)) }
+                // analyzeApk doğrudan dosya yolunu (sourceDir) kullanarak daha güvenilir analiz yapar
+                NativeEngine.analyzeApk(app.sourceDir)
+            }.getOrElse { "{\"verdict\":\"ERROR\", \"apkPath\":\"${app.sourceDir}\"}" }
+
+            runCatching {
+                val report = ApkReport.fromJson(json).copy(appName = label)
+                results.add(report)
+            }
         }
         emit(results)
     }.flowOn(Dispatchers.IO)

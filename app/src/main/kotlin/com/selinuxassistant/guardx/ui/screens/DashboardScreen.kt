@@ -26,14 +26,7 @@ fun DashboardScreen(
 ) {
     val rootReport by vm.rootReport.collectAsState()
     val isChecking by vm.isChecking.collectAsState()
-
-    val securityScore = remember(rootReport) {
-        rootReport?.let { r ->
-            when (r.riskLevel) {
-                0 -> 95; 1 -> 72; 2 -> 48; 3 -> 22; else -> 5
-            }
-        } ?: 0
-    }
+    val securityScore by vm.securityScore.collectAsState()
 
     Column(
         Modifier
@@ -77,16 +70,17 @@ fun DashboardScreen(
                 } else {
                     SecurityGauge(securityScore)
                     rootReport?.let { r ->
+                        val riskColor = Color(android.graphics.Color.parseColor(r.riskColorHex))
                         Surface(
                             shape = RoundedCornerShape(50),
-                            color = Color(android.graphics.Color.parseColor(r.riskColorHex)).copy(.15f)
+                            color = riskColor.copy(.15f)
                         ) {
                             Text(
                                 r.riskLabel,
                                 Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(android.graphics.Color.parseColor(r.riskColorHex))
+                                color = riskColor
                             )
                         }
                     }

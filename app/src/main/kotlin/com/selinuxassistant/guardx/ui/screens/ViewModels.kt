@@ -6,8 +6,12 @@ import com.selinuxassistant.guardx.GuardXApp
 import com.selinuxassistant.guardx.engine.NativeEngine
 import com.selinuxassistant.guardx.model.*
 import com.selinuxassistant.guardx.service.ScanRepository
+import com.selinuxassistant.guardx.service.SecurityState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import com.selinuxassistant.guardx.model.RootReport
+import com.selinuxassistant.guardx.model.ApkReport
+import com.selinuxassistant.guardx.model.BehaviorReport
 
 // ══════════════════════════════════════════════════════════════════
 //  Dashboard ViewModel
@@ -15,8 +19,8 @@ import kotlinx.coroutines.flow.*
 class DashboardViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = (app as GuardXApp).repository
 
-    private val _rootReport = MutableStateFlow<RootReport?>(null)
-    val rootReport: StateFlow<RootReport?> = _rootReport
+    val rootReport = SecurityState.rootReport
+    val securityScore = MutableStateFlow(0)
 
     private val _isChecking = MutableStateFlow(false)
     val isChecking: StateFlow<Boolean> = _isChecking
@@ -24,12 +28,31 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
     fun quickCheck() {
         viewModelScope.launch {
             _isChecking.value = true
-            _rootReport.value = runCatching { repo.rootQuickScan() }.getOrNull()
+            val report = runCatching { repo.rootQuickScan() }.getOrNull()
+            report?.let { SecurityState.updateRoot(it) }
+            updateScore()
             _isChecking.value = false
         }
     }
 
-    init { quickCheck() }
+    fun updateScore() {
+        securityScore.value = SecurityState.calculateOverallScore()
+    }
+
+    init {
+        quickCheck()
+        viewModelScope.launch {
+            combine(
+                SecurityState.rootReport,
+                SecurityState.lastApkReports,
+                SecurityState.lastBehaviorReport
+            ) { r: RootReport?, a: List<ApkReport>, b: BehaviorReport? ->
+                SecurityState.calculateOverallScore()
+            }.collect { score ->
+                securityScore.value = score
+            }
+        }
+    }
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -92,6 +115,7 @@ class ApkScanViewModel(app: Application) : AndroidViewModel(app) {
             }.catch { e ->
                 _state.value = ApkScanState.Error(e.message ?: "Hata")
             }.collect { reports ->
+                SecurityState.updateApks(reports)
                 val sorted = reports.sortedByDescending { it.overallScore }
                 _state.value = ApkScanState.Done(sorted)
             }
@@ -134,8 +158,10 @@ class RootCheckViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = RootCheckState.Scanning
             runCatching {
                 if (deep) repo.rootFullScan(true) else repo.rootQuickScan()
-            }.onSuccess { _state.value = RootCheckState.Done(it) }
-             .onFailure { _state.value = RootCheckState.Error(it.message ?: "Hata") }
+            }.onSuccess {
+                SecurityState.updateRoot(it)
+                _state.value = RootCheckState.Done(it)
+            }.onFailure { _state.value = RootCheckState.Error(it.message ?: "Hata") }
         }
     }
 }
@@ -159,18 +185,28 @@ class BehaviorViewModel(app: Application) : AndroidViewModel(app) {
     fun startScan(durationMs: Int = 5000) {
         viewModelScope.launch {
             _state.value = BehaviorState.Scanning(0, durationMs)
-            // Simüle progress
+
+            // Progress updates for the UI
+            val startTime = System.currentTimeMillis()
             val ticker = launch {
-                var elapsed = 0
-                while (elapsed < durationMs) {
-                    delay(500)
-                    elapsed += 500
+                while (isActive) {
+                    val elapsed = (System.currentTimeMillis() - startTime).toInt()
+                    if (elapsed >= durationMs) break
                     _state.value = BehaviorState.Scanning(elapsed, durationMs)
+                    delay(100)
                 }
             }
-            runCatching { repo.scanProcesses(durationMs) }
-                .onSuccess  { ticker.cancel(); _state.value = BehaviorState.Done(it) }
-                .onFailure  { ticker.cancel(); _state.value = BehaviorState.Error(it.message ?: "Hata") }
+
+            runCatching {
+                repo.scanProcesses(durationMs)
+            }.onSuccess {
+                ticker.cancel()
+                SecurityState.updateBehavior(it)
+                _state.value = BehaviorState.Done(it)
+            }.onFailure {
+                ticker.cancel()
+                _state.value = BehaviorState.Error(it.message ?: "Hata")
+            }
         }
     }
 

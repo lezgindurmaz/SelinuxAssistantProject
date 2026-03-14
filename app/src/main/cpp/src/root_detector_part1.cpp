@@ -277,7 +277,7 @@ void RootDetector::checkRootBinaries(DetectionReport& report) {
             std::string detail = std::string(SU_PATHS[i]) +
                                  (isLink ? " [symlink]" : "");
             // Çalıştırılabilir mi? → daha yüksek ağırlık
-            uint8_t w = (st.st_mode & S_IXUSR) ? 9 : 6;
+            uint8_t w = (st.st_mode & S_IXUSR) ? 15 : 10;
             addEvidence(report, DETECT_SU_BINARY, detail, w);
         }
     }
