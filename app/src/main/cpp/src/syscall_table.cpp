@@ -33,9 +33,13 @@ static const SyscallInfo ARM64_TABLE[] = {
     {  42, "connect",                     3 },
     {  43, "accept",                      2 },
     {  44, "sendto",                      3 },
+    {  40, "mount",                       8 },  // ❗ Yetki yükseltme belirtisi
+    {  41, "umount2",                     7 },
     {  45, "recvfrom",                    2 },
+    {  48, "fchownat",                    3 },
     {  49, "bind",                        3 },
     {  50, "listen",                      2 },
+    {  52, "fchmodat",                    3 },
     {  56, "clone",                       4 },
     {  57, "fork",                        3 },
     {  58, "vfork",                       4 },
@@ -56,6 +60,8 @@ static const SyscallInfo ARM64_TABLE[] = {
     { 126, "capset",                      8 },  // ❗ yetki manipülasyonu
     { 155, "pivot_root",                 10 },  // ❗ container escape
     { 157, "prctl",                       4 },
+    { 160, "sethostname",                 4 },
+    { 161, "setdomainname",               4 },
     { 175, "init_module",                10 },  // ❗ LKM yükleme
     { 176, "delete_module",               8 },  // ❗
     { 254, "inotify_add_watch",           2 },

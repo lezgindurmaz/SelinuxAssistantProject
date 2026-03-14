@@ -22,27 +22,42 @@ object SecurityState {
     fun updateBehavior(report: BehaviorReport) { _lastBehaviorReport.value = report }
 
     fun calculateOverallScore(): Int {
+        val root = _rootReport.value
+        val apks = _lastApkReports.value
+        val behavior = _lastBehaviorReport.value
+
+        // Initial state: low score to encourage scanning
+        if (root == null && apks.isEmpty() && behavior == null) return 0
+
         var score = 100
 
-        // Root impact (up to -95)
-        _rootReport.value?.let { r ->
-            score -= when (r.riskLevel) {
+        // Root impact (High Weight)
+        if (root != null) {
+            score -= when (root.riskLevel) {
                 1 -> 15; 2 -> 35; 3 -> 70; 4 -> 95; else -> 0
             }
-        } ?: run { score -= 10 } // Penalize for no scan
-
-        // APK impact (up to -40)
-        val malwareCount = _lastApkReports.value.count { it.verdict == "MALWARE" }
-        val suspiciousCount = _lastApkReports.value.count { it.verdict == "SUSPICIOUS" }
-        score -= (malwareCount * 20).coerceAtMost(40)
-        score -= (suspiciousCount * 5).coerceAtMost(20)
-
-        // Behavior impact (up to -30)
-        _lastBehaviorReport.value?.let { b ->
-            val highRiskCount = b.profiles.count { it.riskScore >= 40 }
-            score -= (highRiskCount * 10).coerceAtMost(30)
+        } else {
+            score -= 30 // High penalty for no root scan
         }
 
-        return score.coerceIn(0, 100)
+        // APK impact (Medium Weight)
+        if (apks.isNotEmpty()) {
+            val malwareCount = apks.count { it.verdict == "MALWARE" }
+            val suspiciousCount = apks.count { it.verdict == "SUSPICIOUS" }
+            score -= (malwareCount * 25).coerceAtMost(50)
+            score -= (suspiciousCount * 10).coerceAtMost(25)
+        } else {
+            score -= 25 // Penalty for no app scan
+        }
+
+        // Behavior impact (Medium Weight)
+        if (behavior != null) {
+            val highRiskCount = behavior.profiles.count { it.riskScore >= 40 }
+            score -= (highRiskCount * 15).coerceAtMost(30)
+        } else {
+            score -= 15 // Penalty for no behavior monitor
+        }
+
+        return score.coerceIn(5, 100) // Minimum 5 as per user request for "second scan"
     }
 }

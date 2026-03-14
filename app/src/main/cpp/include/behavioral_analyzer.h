@@ -163,7 +163,7 @@ enum class MonitorMethod {
 struct BehaviorConfig {
     MonitorMethod method          = MonitorMethod::METHOD_PROC_POLL;
     uint32_t      durationMs      = 5000;    // Kaç ms izle
-    uint32_t      pollIntervalUs  = 5000;    // Proc polling aralığı (µs)
+    uint32_t      pollIntervalUs  = 1000;    // Proc polling aralığı (µs) — 1ms for better capture
     uint32_t      windowSize      = 256;     // Sliding window olay sayısı
     uint32_t      riskThreshold   = 30;      // Bu puanın üstü alert
     bool          followChildren  = true;    // fork edilen çocukları da izle

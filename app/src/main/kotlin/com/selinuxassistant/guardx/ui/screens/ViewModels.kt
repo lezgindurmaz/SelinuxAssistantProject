@@ -188,24 +188,32 @@ class BehaviorViewModel(app: Application) : AndroidViewModel(app) {
 
             // Progress updates for the UI
             val startTime = System.currentTimeMillis()
-            val ticker = launch {
-                while (isActive) {
-                    val elapsed = (System.currentTimeMillis() - startTime).toInt()
-                    if (elapsed >= durationMs) break
-                    _state.value = BehaviorState.Scanning(elapsed, durationMs)
-                    delay(100)
-                }
-            }
 
-            runCatching {
-                repo.scanProcesses(durationMs)
-            }.onSuccess {
+            coroutineScope {
+                val ticker = launch {
+                    while (isActive) {
+                        val elapsed = (System.currentTimeMillis() - startTime).toInt()
+                        if (elapsed >= durationMs) {
+                            _state.value = BehaviorState.Scanning(durationMs, durationMs)
+                            break
+                        }
+                        _state.value = BehaviorState.Scanning(elapsed, durationMs)
+                        delay(100)
+                    }
+                }
+
+                val result = runCatching {
+                    repo.scanProcesses(durationMs)
+                }
+
                 ticker.cancel()
-                SecurityState.updateBehavior(it)
-                _state.value = BehaviorState.Done(it)
-            }.onFailure {
-                ticker.cancel()
-                _state.value = BehaviorState.Error(it.message ?: "Hata")
+
+                result.onSuccess {
+                    SecurityState.updateBehavior(it)
+                    _state.value = BehaviorState.Done(it)
+                }.onFailure {
+                    _state.value = BehaviorState.Error(it.message ?: "Hata")
+                }
             }
         }
     }

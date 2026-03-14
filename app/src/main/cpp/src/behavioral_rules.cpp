@@ -158,11 +158,29 @@ static const BehaviorRule DEFAULT_RULES[] = {
         Arm64::LISTEN,
         0, 0, 0, 0
     },
+    {
+        "Mount_Operation",
+        BEH_SETUID_ATTEMPT, 8,
+        Arm64::MOUNT,
+        0, 0, 0, 0
+    },
+    {
+        "Umount_Operation",
+        BEH_SETUID_ATTEMPT, 7,
+        Arm64::UMOUNT2,
+        0, 0, 0, 0
+    },
     // ── Dosya Sistemi ──────────────────────────────────
     {
         "Sensitive_Dir_Watch",
         BEH_INOTIFY_SENSITIVE, 6,
         Arm64::INOTIFY_ADD_WATCH,
+        0, 0, 0, 0
+    },
+    {
+        "Suspicious_Chmod",
+        BEH_SENSITIVE_READ, 5,
+        Arm64::FCHMODAT,
         0, 0, 0, 0
     },
     // sentinel

@@ -27,6 +27,8 @@ namespace Arm64 {
     static constexpr uint32_t MPROTECT          =  10;
     static constexpr uint32_t MUNMAP            =  11;
     static constexpr uint32_t BRK               =  12;
+    static constexpr uint32_t MOUNT             =  40;
+    static constexpr uint32_t UMOUNT2           =  41;
     static constexpr uint32_t RT_SIGACTION      =  13;
     static constexpr uint32_t IOCTL             =  16;
     static constexpr uint32_t READV             =  19;
@@ -54,8 +56,12 @@ namespace Arm64 {
     static constexpr uint32_t CAPGET            = 125;
     static constexpr uint32_t CAPSET            = 126;
     static constexpr uint32_t RT_SIGTIMEDWAIT   = 128;
+    static constexpr uint32_t FCHOWNAT          =  48;
+    static constexpr uint32_t FCHMODAT          =  52;
     static constexpr uint32_t PRCTL             = 157;
     static constexpr uint32_t ARCH_PRCTL        = 158;
+    static constexpr uint32_t SETHOSTNAME       = 160;
+    static constexpr uint32_t SETDOMAINNAME     = 161;
     static constexpr uint32_t SETRESUID         = 117;
     static constexpr uint32_t SETRESGID         = 119;
     static constexpr uint32_t GETRESUID         = 118;

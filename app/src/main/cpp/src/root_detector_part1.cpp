@@ -300,6 +300,23 @@ void RootDetector::checkRootBinaries(DetectionReport& report) {
     if (fileExists("/sbin/magisk") || fileExists("/data/adb/magisk")) {
         addEvidence(report, DETECT_SU_BINARY, "magisk binary tespit edildi", 10);
     }
+
+    // KernelSU / Apatch / Zygisk tespiti için ek dosya kontrolleri
+    static const char* MODERN_ROOT_MARKERS[] = {
+        "/data/adb/ksu",
+        "/data/adb/apatch",
+        "/data/adb/modules",
+        "/sys/kernel/security/ksu",
+        "/dev/ksu",
+        "/proc/ksu",
+        nullptr
+    };
+    for (int i = 0; MODERN_ROOT_MARKERS[i]; ++i) {
+        if (access(MODERN_ROOT_MARKERS[i], F_OK) == 0) {
+            addEvidence(report, DETECT_SU_BINARY,
+                        std::string("Modern root tespiti: ") + MODERN_ROOT_MARKERS[i], 10);
+        }
+    }
 }
 
 // ══════════════════════════════════════════════════════════
