@@ -5,3 +5,5 @@ app/build/
 .cxx
 .externalNativeBuild
 *.log
+GuardX-Temp/
+GuardX-Organized-1.zip

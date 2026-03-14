@@ -1,5 +1,8 @@
 buildscript {
-    ext.kotlin_version = '1.8.10'
+    ext {
+        kotlin_version = '1.8.10'
+        compose_compiler_version = '1.4.3'
+    }
     repositories {
         google()
         mavenCentral()
@@ -15,4 +18,8 @@ allprojects {
         google()
         mavenCentral()
     }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
 }
