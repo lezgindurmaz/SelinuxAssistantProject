@@ -107,6 +107,13 @@ class ApkScanViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow<ApkScanState>(ApkScanState.Idle)
     val state: StateFlow<ApkScanState> = _state
 
+    init {
+        val existing = SecurityState.lastApkReports.value
+        if (existing.isNotEmpty()) {
+            _state.value = ApkScanState.Done(existing)
+        }
+    }
+
     fun scanAllApps() {
         viewModelScope.launch {
             _state.value = ApkScanState.Scanning("", 0, 0)
@@ -150,6 +157,12 @@ class RootCheckViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow<RootCheckState>(RootCheckState.Idle)
     val state: StateFlow<RootCheckState> = _state
 
+    init {
+        SecurityState.rootReport.value?.let {
+            _state.value = RootCheckState.Done(it)
+        }
+    }
+
     fun quickScan() { scan(deep = false) }
     fun deepScan()  { scan(deep = true)  }
 
@@ -181,6 +194,12 @@ class BehaviorViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _state = MutableStateFlow<BehaviorState>(BehaviorState.Idle)
     val state: StateFlow<BehaviorState> = _state
+
+    init {
+        SecurityState.lastBehaviorReport.value?.let {
+            _state.value = BehaviorState.Done(it)
+        }
+    }
 
     fun startScan(durationMs: Int = 5000) {
         viewModelScope.launch {

@@ -950,10 +950,11 @@ void BehavioralAnalyzer::checkProcMaps(pid_t pid, ProcessProfile& profile) {
                 std::string libStr(libName);
                 if (!alreadyReported.count(libStr)) {
                     alreadyReported.insert(libStr);
+                    // Sistem kütüphanesi olma ihtimaline karşı sev seviyesini düşür ve sadece şüpheli işaretle
                     addFindingInternal(profile, BEH_FOREIGN_LIB_INJECT,
-                               std::string("Şüpheli kütüphane inject: /proc/maps'de ") +
-                               libName + " bulundu!",
-                               9);
+                               std::string("Şüpheli kütüphane: /proc/maps'de ") +
+                               libName + " (İnceleme gerekebilir)",
+                               5);
                     profile.snapshot.suspiciousLibs.push_back(libName);
                 }
 

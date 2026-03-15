@@ -176,6 +176,8 @@ public:
     void checkPtrace          (DetectionReport& report);
     void checkKernelModules   (DetectionReport& report);
     void checkSeccomp         (DetectionReport& report);
+    void checkKernelSu        (DetectionReport& report);
+    void checkAPatch          (DetectionReport& report);
 
     // ── YENİ kontroller ──────────────────────────────────
     // Gelişmiş bellek haritası analizi:

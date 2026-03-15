@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.selinuxassistant.guardx.model.RootReport
+import com.selinuxassistant.guardx.service.SecurityState
 import com.selinuxassistant.guardx.ui.components.*
 import com.selinuxassistant.guardx.ui.theme.GuardXColors
 
@@ -99,30 +100,31 @@ fun DashboardScreen(
         }
 
         // Durum kartları
-        rootReport?.let { r ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatCard(
-                    title = "Root",
-                    value = if (r.isRooted) "Tespit!" else "Temiz",
-                    icon  = Icons.Default.Security,
-                    color = if (r.isRooted) GuardXColors.Danger else GuardXColors.Safe,
-                    modifier = Modifier.weight(1f)
-                )
-                StatCard(
-                    title = "Hook",
-                    value = if (r.isHooked) "Tespit!" else "Temiz",
-                    icon  = Icons.Default.BugReport,
-                    color = if (r.isHooked) GuardXColors.Critical else GuardXColors.Safe,
-                    modifier = Modifier.weight(1f)
-                )
-                StatCard(
-                    title = "Bootloader",
-                    value = if (r.bootloaderUnlocked) "Açık" else "Kilitli",
-                    icon  = Icons.Default.Lock,
-                    color = if (r.bootloaderUnlocked) GuardXColors.Warning else GuardXColors.Safe,
-                    modifier = Modifier.weight(1f)
-                )
-            }
+        val lastApks by SecurityState.lastApkReports.collectAsState()
+        val malwareCount = lastApks.count { it.verdict == "MALWARE" }
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            StatCard(
+                title = "Root",
+                value = rootReport?.let { if (it.isRooted) "Tespit!" else "Temiz" } ?: "–",
+                icon  = Icons.Default.Security,
+                color = if (rootReport?.isRooted == true) GuardXColors.Danger else GuardXColors.Safe,
+                modifier = Modifier.weight(1f)
+            )
+            StatCard(
+                title = "Virüs",
+                value = if (malwareCount > 0) "$malwareCount Tespit" else if (lastApks.isNotEmpty()) "Temiz" else "–",
+                icon  = Icons.Default.BugReport,
+                color = if (malwareCount > 0) GuardXColors.Critical else GuardXColors.Safe,
+                modifier = Modifier.weight(1f)
+            )
+            StatCard(
+                title = "Sistem",
+                value = rootReport?.let { if (it.bootloaderUnlocked) "Açık" else "Kilitli" } ?: "–",
+                icon  = Icons.Default.Lock,
+                color = if (rootReport?.bootloaderUnlocked == true) GuardXColors.Warning else GuardXColors.Safe,
+                modifier = Modifier.weight(1f)
+            )
         }
 
         // Hızlı Eylemler

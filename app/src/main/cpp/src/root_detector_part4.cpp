@@ -55,6 +55,7 @@
 #include <dlfcn.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/prctl.h>
 #include <time.h>
 #include <android/log.h>
 
@@ -663,6 +664,46 @@ void RootDetector::checkSyscallTiming(DetectionReport& report) {
                  (double)ratio);
         addEvidence(report, DETECT_SYSCALL_HOOK_TIMING, detail, 7);
         LOGW("%s", detail);
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  checkKernelSu()
+//  Syscall-level probe for KernelSU
+// ══════════════════════════════════════════════════════════════════════
+void RootDetector::checkKernelSu(DetectionReport& report) {
+    // 1. prctl magic probe
+    // KernelSU uses 0xdeadc0de as a command for various operations.
+    // If it's NOT KernelSU, this usually returns -1 with EINVAL.
+    // If it IS KernelSU, it might return 0 or a specific version.
+    errno = 0;
+    long res = prctl(0xdeadc0de, 0, 0, 0, 0);
+    if (res >= 0 || (res == -1 && errno != EINVAL)) {
+        addEvidence(report, DETECT_SU_BINARY, "KernelSU prctl probe success (res=" + std::to_string(res) + ")", 10);
+    }
+
+    // 2. /data/adb/ksu check (duplicate from part1 but refined here)
+    if (access("/data/adb/ksu", F_OK) == 0) {
+        addEvidence(report, DETECT_SU_BINARY, "KernelSU manager directory found", 9);
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  checkAPatch()
+//  Syscall-level probe for APatch
+// ══════════════════════════════════════════════════════════════════════
+void RootDetector::checkAPatch(DetectionReport& report) {
+    // 1. APatch prctl magic
+    // APatch uses 0xdeadbeef as a magic value for some versions.
+    errno = 0;
+    long res = prctl(0xdeadbeef, 0xdeadbeef, 0, 0, 0);
+    if (res >= 0 || (res == -1 && errno != EINVAL)) {
+         addEvidence(report, DETECT_SU_BINARY, "APatch prctl probe success", 10);
+    }
+
+    // 2. /dev/apd check
+    if (access("/dev/apd", F_OK) == 0) {
+        addEvidence(report, DETECT_SU_BINARY, "APatch control device found (/dev/apd)", 10);
     }
 }
 

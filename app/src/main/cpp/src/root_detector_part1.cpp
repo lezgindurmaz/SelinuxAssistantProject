@@ -94,7 +94,7 @@ RiskLevel RootDetector::computeRiskLevel(const DetectionReport& r) {
     bool rooted    = r.isRooted;
 
     if (score == 0)              return RiskLevel::SAFE;
-    if (score < 5)               return RiskLevel::LOW;
+    if (score < 7)               return RiskLevel::LOW; // Sadece şüpheli libler varsa LOW/Sarı kalmalı
     if (rooted && hooked)        return RiskLevel::CRITICAL;
     if (score >= m_config.rootThresholdScore) return RiskLevel::HIGH;
     return RiskLevel::MEDIUM;
@@ -156,12 +156,14 @@ DetectionReport RootDetector::fullScan() {
     checkMemoryMaps       (report);  // 10. /proc/self/maps (temel)
     checkMemoryMapsAdvanced(report); // 11. Anonim RWX + Shamiko + silinen .so (YENİ)
     checkSyscallTiming    (report);  // 12. Prologue + timing hook tespiti (YENİ)
-    checkFileDescriptors  (report);  // 13. /proc/self/fd
-    checkPtrace           (report);  // 14. Debugger kontrolü
+    checkKernelSu         (report);  // 13. KernelSU Probes
+    checkAPatch           (report);  // 14. APatch Probes
+    checkFileDescriptors  (report);  // 15. /proc/self/fd
+    checkPtrace           (report);  // 16. Debugger kontrolü
     if (m_config.deepKernelCheck) {
-        checkKernelIntegrity(report); // 15. Kernel taint / versiyon
-        checkKernelModules  (report); // 16. Yüklenmiş LKM'ler
-        checkSeccomp        (report); // 17. Seccomp durumu
+        checkKernelIntegrity(report); // 17. Kernel taint / versiyon
+        checkKernelModules  (report); // 18. Yüklenmiş LKM'ler
+        checkSeccomp        (report); // 19. Seccomp durumu
     }
 
     // ── Sonuç karar mekanizması ────────────────────────────────────
