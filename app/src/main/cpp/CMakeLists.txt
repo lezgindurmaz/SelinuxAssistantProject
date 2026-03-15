@@ -13,6 +13,7 @@ set(ENGINE_SOURCES
     src/root_detector_part1.cpp
     src/root_detector_part2.cpp
     src/root_detector_part3.cpp
+    src/root_detector_part4.cpp
     src/syscall_table.cpp
     src/ptrace_monitor.cpp
     src/behavioral_rules.cpp
