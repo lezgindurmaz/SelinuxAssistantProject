@@ -1,0 +1,90 @@
+name: Build Custom Kernel (Sweet)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - custom-kernel-*
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python2
+
+    - name: Set up Toolchain (AOSP Clang)
+      run: |
+        mkdir -p clang
+        cd clang
+        wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r487747c.tar.gz
+        tar -xzf clang-r487747c.tar.gz
+        rm clang-r487747c.tar.gz
+        cd ..
+        mkdir -p gcc64
+        cd gcc64
+        wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/master.tar.gz
+        tar -xzf master.tar.gz
+        rm master.tar.gz
+        cd ..
+        mkdir -p gcc32
+        cd gcc32
+        wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/master.tar.gz
+        tar -xzf master.tar.gz
+        rm master.tar.gz
+        cd ..
+
+    - name: Clone Kernel Source
+      run: |
+        git clone --depth 1 -b sweet-r-oss https://github.com/DarkAngelGR/kernel_xiaomi_sweet.git kernel
+
+    - name: Integrate KernelSU
+      run: |
+        cd kernel
+        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+
+    - name: Configure Kernel (SELinux & KSU)
+      run: |
+        cd kernel
+        cp arch/arm64/configs/vendor/sweet_user_defconfig arch/arm64/configs/vendor/sweet_stock_defconfig
+        echo "CONFIG_KSU=y" >> arch/arm64/configs/vendor/sweet_stock_defconfig
+        echo "CONFIG_SECURITY_SELINUX=y" >> arch/arm64/configs/vendor/sweet_stock_defconfig
+        echo "CONFIG_SECURITY_SELINUX_BOOTPARAM=y" >> arch/arm64/configs/vendor/sweet_stock_defconfig
+        echo "CONFIG_SECURITY_SELINUX_DEVELOP=y" >> arch/arm64/configs/vendor/sweet_stock_defconfig
+        sed -i 's/CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-GuardedX"/' arch/arm64/configs/vendor/sweet_stock_defconfig
+
+    - name: Build Kernel
+      run: |
+        cd kernel
+        export PATH=$GITHUB_WORKSPACE/clang/bin:$GITHUB_WORKSPACE/gcc64/bin:$GITHUB_WORKSPACE/gcc32/bin:$PATH
+        make ARCH=arm64 vendor/sweet_stock_defconfig
+        make ARCH=arm64 -j$(nproc) \
+          CROSS_COMPILE=aarch64-linux-android- \
+          CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+          CC=clang \
+          CLANG_TRIPLE=aarch64-linux-gnu-
+
+    - name: Pack boot.img
+      run: |
+        wget https://github.com/lezgindurmaz/SelinuxAssistantProject/releases/download/v1.0.7/boot.zip -O boot.zip
+        unzip boot.zip
+        wget https://github.com/topjohnwu/Magisk/releases/download/v26.4/Magisk-v26.4.apk
+        unzip Magisk-v26.4.apk lib/x86_64/libmagiskboot.so
+        mv lib/x86_64/libmagiskboot.so magiskboot
+        chmod +x magiskboot
+        ./magiskboot unpack boot.img
+        cp kernel/arch/arm64/boot/Image.gz-dtb kernel_new || cp kernel/arch/arm64/boot/Image.gz kernel_new
+        mv kernel_new kernel
+        ./magiskboot repack boot.img boot_custom.img
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: custom-boot-img
+        path: boot_custom.img
