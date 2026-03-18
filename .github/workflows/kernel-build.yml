@@ -23,19 +23,19 @@ jobs:
       run: |
         mkdir -p clang
         cd clang
-        wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r487747c.tar.gz
+        curl -LOs https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz
         tar -xzf clang-r487747c.tar.gz
         rm clang-r487747c.tar.gz
         cd ..
         mkdir -p gcc64
         cd gcc64
-        wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/master.tar.gz
+        curl -LOs https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/main/master.tar.gz
         tar -xzf master.tar.gz
         rm master.tar.gz
         cd ..
         mkdir -p gcc32
         cd gcc32
-        wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/master.tar.gz
+        curl -LOs https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/main/master.tar.gz
         tar -xzf master.tar.gz
         rm master.tar.gz
         cd ..
