@@ -45,8 +45,9 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
             combine(
                 SecurityState.rootReport,
                 SecurityState.lastApkReports,
-                SecurityState.lastBehaviorReport
-            ) { r: RootReport?, a: List<ApkReport>, b: BehaviorReport? ->
+                SecurityState.lastBehaviorReport,
+                SecurityState.integrityVerdict
+            ) { _: RootReport?, _: List<ApkReport>, _: BehaviorReport?, _: com.selinuxassistant.guardx.service.IntegrityVerdict? ->
                 SecurityState.calculateOverallScore()
             }.collect { score ->
                 securityScore.value = score
@@ -277,4 +278,45 @@ class SettingsViewModel(application: android.app.Application) :
             _isUpdating.value = false
         }
     }
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Play Integrity ViewModel
+// ══════════════════════════════════════════════════════════════════
+sealed class IntegrityUiState {
+    object Idle    : IntegrityUiState()
+    object Loading : IntegrityUiState()
+    data class Done (val result:  com.selinuxassistant.guardx.service.IntegrityResult.Success) : IntegrityUiState()
+    data class Error(val message: String) : IntegrityUiState()
+}
+
+class IntegrityViewModel(app: Application) : AndroidViewModel(app) {
+
+    private val _state = MutableStateFlow<IntegrityUiState>(IntegrityUiState.Idle)
+    val state: StateFlow<IntegrityUiState> = _state.asStateFlow()
+
+    init {
+        SecurityState.integrityVerdict.value?.let {
+            _state.value = IntegrityUiState.Done(com.selinuxassistant.guardx.service.IntegrityResult.Success(it))
+        }
+    }
+
+    private val manager =
+        com.selinuxassistant.guardx.service.PlayIntegrityManager(app.applicationContext)
+
+    fun requestVerdict() {
+        viewModelScope.launch {
+            _state.value = IntegrityUiState.Loading
+            when (val result = manager.requestIntegrityVerdict()) {
+                is com.selinuxassistant.guardx.service.IntegrityResult.Success -> {
+                    SecurityState.updateIntegrity(result.verdict)
+                    _state.value = IntegrityUiState.Done(result)
+                }
+                is com.selinuxassistant.guardx.service.IntegrityResult.Error   ->
+                    _state.value = IntegrityUiState.Error(result.message)
+            }
+        }
+    }
+
+    fun reset() { _state.value = IntegrityUiState.Idle }
 }

@@ -54,5 +54,9 @@ fun GuardXNavHost() {
         composable("settings") {
             SettingsScreen(onBack = { nav.popBackStack() })
         }
+
+        composable("integrity") {
+            IntegrityScreen(onBack = { nav.popBackStack() })
+        }
     }
 }

@@ -160,6 +160,13 @@ fun DashboardScreen(
                 color  = GuardXColors.Critical,
                 onClick= { onNavigate("behavior") }
             )
+            QuickActionCard(
+                icon   = Icons.Default.VerifiedUser,
+                title  = "Play Integrity",
+                sub    = "Google sunucusu doğrulaması",
+                color  = GuardXColors.Safe,
+                onClick= { onNavigate("integrity") }
+            )
         }
     }
 }

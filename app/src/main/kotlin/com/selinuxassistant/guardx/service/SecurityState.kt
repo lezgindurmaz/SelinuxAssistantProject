@@ -3,6 +3,7 @@ package com.selinuxassistant.guardx.service
 import com.selinuxassistant.guardx.model.RootReport
 import com.selinuxassistant.guardx.model.ApkReport
 import com.selinuxassistant.guardx.model.BehaviorReport
+import com.selinuxassistant.guardx.service.IntegrityVerdict
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,17 +18,22 @@ object SecurityState {
     private val _lastBehaviorReport = MutableStateFlow<BehaviorReport?>(null)
     val lastBehaviorReport: StateFlow<BehaviorReport?> = _lastBehaviorReport.asStateFlow()
 
+    private val _integrityVerdict = MutableStateFlow<IntegrityVerdict?>(null)
+    val integrityVerdict: StateFlow<IntegrityVerdict?> = _integrityVerdict.asStateFlow()
+
     fun updateRoot(report: RootReport) { _rootReport.value = report }
     fun updateApks(reports: List<ApkReport>) { _lastApkReports.value = reports }
     fun updateBehavior(report: BehaviorReport) { _lastBehaviorReport.value = report }
+    fun updateIntegrity(verdict: IntegrityVerdict) { _integrityVerdict.value = verdict }
 
     fun calculateOverallScore(): Int {
         val root = _rootReport.value
         val apks = _lastApkReports.value
         val behavior = _lastBehaviorReport.value
+        val integrity = _integrityVerdict.value
 
         // Initial state: low score to encourage scanning
-        if (root == null && apks.isEmpty() && behavior == null) return 0
+        if (root == null && apks.isEmpty() && behavior == null && integrity == null) return 0
 
         var score = 100
 
@@ -56,6 +62,12 @@ object SecurityState {
             score -= (highRiskCount * 15).coerceAtMost(30)
         } else {
             score -= 15 // Penalty for no behavior monitor
+        }
+
+        // Integrity impact
+        if (integrity != null) {
+            if (!integrity.meetsDeviceIntegrity) score -= 20
+            if (!integrity.appRecognized) score -= 10
         }
 
         return score.coerceIn(5, 100) // Minimum 5 as per user request for "second scan"

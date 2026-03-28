@@ -11,86 +11,65 @@ namespace AntiVirus {
 // ═══════════════════════════════════════════════════════════
 //  Tespit kategorileri  (bitmask)
 // ═══════════════════════════════════════════════════════════
-enum DetectionFlag : uint32_t {
+enum DetectionFlag : uint64_t {
     DETECT_NONE               = 0,
 
-    // Root kanıtları
-    DETECT_SU_BINARY          = (1u <<  0),
-    DETECT_ROOT_PACKAGES      = (1u <<  1),
-    DETECT_WRITABLE_SYSTEM    = (1u <<  2),
-    DETECT_RW_SYSTEM_MOUNT    = (1u <<  3),
-    DETECT_ROOT_CLOAKING      = (1u <<  4),
-    DETECT_BUILD_PROPS        = (1u <<  5),
-    DETECT_DANGEROUS_PROPS    = (1u <<  6),
-    DETECT_SHELL_ROOT_ACCESS  = (1u <<  7),
+    // ── Temel root kanıtları ─────────────────────────────
+    DETECT_SU_BINARY          = (1ULL <<  0),
+    DETECT_ROOT_PACKAGES      = (1ULL <<  1),
+    DETECT_WRITABLE_SYSTEM    = (1ULL <<  2),
+    DETECT_RW_SYSTEM_MOUNT    = (1ULL <<  3),
+    DETECT_ROOT_CLOAKING      = (1ULL <<  4),
+    DETECT_BUILD_PROPS        = (1ULL <<  5),
+    DETECT_DANGEROUS_PROPS    = (1ULL <<  6),
+    DETECT_SHELL_ROOT_ACCESS  = (1ULL <<  7),
 
-    // Bootloader
-    DETECT_BOOTLOADER_UNLOCKED = (1u <<  8),
-    DETECT_OEM_UNLOCK_ENABLED  = (1u <<  9),
-    DETECT_AVB_DISABLED        = (1u << 10),
+    // ── Bootloader ───────────────────────────────────────
+    DETECT_BOOTLOADER_UNLOCKED = (1ULL <<  8),
+    DETECT_OEM_UNLOCK_ENABLED  = (1ULL <<  9),
+    DETECT_AVB_DISABLED        = (1ULL << 10),
 
-    // Kernel bütünlüğü
-    DETECT_KERNEL_TAINTED      = (1u << 11),
-    DETECT_SELINUX_DISABLED    = (1u << 12),
-    DETECT_KALLSYMS_EXPOSED    = (1u << 13),
-    DETECT_KERNEL_VERSION_MOD  = (1u << 14),
-    DETECT_PROC_MODULES        = (1u << 15),
-    DETECT_SECCOMP_DISABLED    = (1u << 16),
+    // ── Kernel bütünlüğü ─────────────────────────────────
+    DETECT_KERNEL_TAINTED      = (1ULL << 11),
+    DETECT_SELINUX_DISABLED    = (1ULL << 12),
+    DETECT_KALLSYMS_EXPOSED    = (1ULL << 13),
+    DETECT_KERNEL_VERSION_MOD  = (1ULL << 14),
+    DETECT_PROC_MODULES        = (1ULL << 15),
+    DETECT_SECCOMP_DISABLED    = (1ULL << 16),
 
-    // Hook framework'leri
-    DETECT_FRIDA               = (1u << 17),
-    DETECT_XPOSED              = (1u << 18),
-    DETECT_MAGISK_HIDE         = (1u << 19),
-    DETECT_SUBSTRATE           = (1u << 20),
-    DETECT_MEMORY_HOOKS        = (1u << 21),
-    DETECT_SUSPICIOUS_FDS      = (1u << 22),
-    DETECT_PTRACE_ATTACHED     = (1u << 23),
-    DETECT_MAPS_INJECTION      = (1u << 24),
+    // ── Hook framework'leri ──────────────────────────────
+    DETECT_FRIDA               = (1ULL << 17),
+    DETECT_XPOSED              = (1ULL << 18),
+    DETECT_MAGISK_HIDE         = (1ULL << 19),
+    DETECT_SUBSTRATE           = (1ULL << 20),
+    DETECT_MEMORY_HOOKS        = (1ULL << 21),
+    DETECT_SUSPICIOUS_FDS      = (1ULL << 22),
+    DETECT_PTRACE_ATTACHED     = (1ULL << 23),
+    DETECT_MAPS_INJECTION      = (1ULL << 24),
 
-    // ══ YENİ: Bellek Haritalama (Memory Mapping) Tespitleri ══════
-    //
-    // Anonim RWX bölge — normal uygulamada ART/JIT dışında
-    // yazılabilir+çalıştırılabilir anonim sayfa olmamalıdır.
-    // Ağırlık 7: ART yüksek yük altında benzer bölgeler yaratabilir
-    // (false-positive önlemi: dalvik/art etiketleri filtrelenir).
-    DETECT_ANON_RWX_MAPPING    = (1u << 25),
+    // ── Bellek Haritalama / Timing (v1.0.7) ──────────────
+    DETECT_ANON_RWX_MAPPING    = (1ULL << 25),
+    DETECT_SHAMIKO_COMPANION   = (1ULL << 26),
+    DETECT_DELETED_LIB_MAPPED  = (1ULL << 27),
+    DETECT_INLINE_HOOK         = (1ULL << 28),
+    DETECT_SYSCALL_HOOK_TIMING = (1ULL << 29),
+    DETECT_MAPS_GAP_ANOMALY    = (1ULL << 30),
 
-    // Shamiko / Zygisk Companion imzası.
-    // Shamiko, Zygisk modüllerini gizlemek için özel süreç ve
-    // bellek düzenlemesi kullanır; maps'de kendine has kalıntı bırakır.
-    // Ağırlık 10: son derece spesifik, neredeyse hiç false-positive yok.
-    DETECT_SHAMIKO_COMPANION   = (1u << 26),
+    // ══ YENİ: Zygote Analizi (v1.0.8) ════════════════════
+    // Zygote sürecinin maps'inde şüpheli kütüphane tespit edildi.
+    DETECT_ZYGOTE_MAPS_DIRTY   = (1ULL << 31),
+    // Zygote'un UID/GID durumu anormal.
+    DETECT_ZYGOTE_STATE_ANOM   = (1ULL << 32),
+    // Zygote üzerinde başka bir süreç izleme yapıyor (TracerPid != 0).
+    DETECT_ZYGOTE_TRACED       = (1ULL << 33),
 
-    // Silinmiş fakat hâlâ belleğe eşlenmiş kütüphane.
-    // Hook yapan araçlar genellikle .so'yu diskten siler ama
-    // çalışma zamanında eşlemeyi canlı tutar (gizleme tekniği).
-    // Ağırlık 6: güncelleme/hot-patch sırasında meşru olabilir,
-    // bu yüzden orta ağırlık verildi.
-    DETECT_DELETED_LIB_MAPPED  = (1u << 27),
-
-    // ══ YENİ: Syscall Timing Tespitleri ══════════════════════════
-    //
-    // Satır içi (inline) hook tespiti — PLT/GOT prologue analizi.
-    // Hooked bir libc fonksiyonunun ilk talimatı standart AARCH64
-    // AAPCS prologue'ü (stp x29,x30 veya sub sp,sp,#N) yerine
-    // bir dal talimatı (B, BR, MOVZ x16 + BR) içerir.
-    // Ağırlık 8: güçlü kanıt; ancak proguard/lto edilmiş vendor
-    // kütüphaneleri prolog değiştirebilir → orta-yüksek.
-    DETECT_INLINE_HOOK         = (1u << 28),
-
-    // Zamanlama saldırısı (timing attack) ile hook tespiti.
-    // Doğrudan syscall (inline assembly) ile libc sarmalayıcı
-    // arasındaki medyan süre farkı eşiği aşarsa hook şüphesi.
-    // Ağırlık 5: zamanlama ölçümleri gürültülüdür (CPU yükü,
-    // termal kısıtlama, vDSO) — tek başına kesin kanıt değil.
-    DETECT_SYSCALL_HOOK_TIMING = (1u << 29),
-
-    // Maps tutarsızlığı — harita boşluğu / sayısı anomalisi.
-    // Shamiko ve bazı bypass araçları bellek haritasından kendi
-    // eşlemelerini silerek gizler; bu durum belirli sayfa
-    // adreslerinde boşluk (gap) ya da beklenenden az satır bırakır.
-    // Ağırlık 6: ortam bağımlı, destekleyici kanıt olarak kullan.
-    DETECT_MAPS_GAP_ANOMALY    = (1u << 30),
+    // ══ YENİ: Derin Hook Analizi (v1.0.8) ════════════════
+    // GOT (Global Offset Table) girişleri beklenen adres aralığının dışına işaret ediyor.
+    DETECT_GOT_OVERWRITE       = (1ULL << 34),
+    // Android linker namespace'i beklenmedik bir kütüphane yüklemiş.
+    DETECT_LINKER_NS_ANOMALY   = (1ULL << 35),
+    // Dobby veya ShadowHook kütüphanesinin karakteristik bellekteki imzaları tespit edildi.
+    DETECT_DOBBY_SHADOWHOOK    = (1ULL << 36),
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -117,7 +96,7 @@ struct Evidence {
 //  Komple tespit raporu
 // ═══════════════════════════════════════════════════════════
 struct DetectionReport {
-    uint32_t              flags;
+    uint64_t              flags;
     RiskLevel             riskLevel;
     std::vector<Evidence> evidences;
     bool                  isRooted;
@@ -137,6 +116,12 @@ struct DetectorConfig {
     bool     tolerateDeveloperDevice = false;
     bool     deepKernelCheck         = true;
     bool     checkKallsyms           = true;
+
+    // Zygote analizi — root olmadan erişim kısıtlı olabilir
+    bool     checkZygote             = true;
+
+    // GOT hook analizi kaç fonksiyonu kontrol etsin?
+    uint32_t gotCheckDepth           = 12;
 
     // Timing kontrolü kaç iterasyon çalıştırsın?
     // Daha fazla = daha güvenilir ama yavaş.
@@ -192,6 +177,12 @@ public:
     //   - Doğrudan asm syscall vs. libc zamanlama karşılaştırması
     void checkSyscallTiming      (DetectionReport& report);
 
+    // ── YENİ: Derin Zygote Analizi ──────────────────────
+    void checkZygoteIntegrity (DetectionReport& report);
+
+    // ── YENİ: Derin Hook Analizi ─────────────────────────
+    void checkDeepHookAnalysis(DetectionReport& report);
+
 private:
     DetectorConfig m_config;
 
@@ -207,6 +198,11 @@ private:
 
     RiskLevel   computeRiskLevel  (const DetectionReport& r);
     uint32_t    computeTotalScore (const DetectionReport& r);
+
+    // Zygote yardımcıları
+    pid_t       findZygotePid     (bool prefer64 = true);
+    std::string readProcFile      (pid_t pid, const char* file,
+                                   size_t maxBytes = 65536);
 };
 
 } // namespace AntiVirus

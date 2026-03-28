@@ -106,7 +106,7 @@ RiskLevel RootDetector::computeRiskLevel(const DetectionReport& r) {
 std::string DetectionReport::toJSON() const {
     std::ostringstream j;
     j << "{"
-      << "\"flags\":"       << flags
+      << "\"flags\":"       << (uint64_t)flags
       << ",\"riskLevel\":"  << static_cast<int>(riskLevel)
       << ",\"isRooted\":"   << (isRooted  ? "true" : "false")
       << ",\"isHooked\":"   << (isHooked  ? "true" : "false")
@@ -155,15 +155,17 @@ DetectionReport RootDetector::fullScan() {
     checkMagisk           (report);  //  9. Magisk özel kontroller
     checkMemoryMaps       (report);  // 10. /proc/self/maps (temel)
     checkMemoryMapsAdvanced(report); // 11. Anonim RWX + Shamiko + silinen .so (YENİ)
-    checkSyscallTiming    (report);  // 12. Prologue + timing hook tespiti (YENİ)
+    checkSyscallTiming    (report);  // 12. Prologue + timing hook tespiti
     checkKernelSu         (report);  // 13. KernelSU Probes
     checkAPatch           (report);  // 14. APatch Probes
     checkFileDescriptors  (report);  // 15. /proc/self/fd
     checkPtrace           (report);  // 16. Debugger kontrolü
+    checkZygoteIntegrity  (report);  // 17. Derin Zygote analizi (v1.0.8)
+    checkDeepHookAnalysis (report);  // 18. GOT/Namespace/Dobby hook analizi (v1.0.8)
     if (m_config.deepKernelCheck) {
-        checkKernelIntegrity(report); // 17. Kernel taint / versiyon
-        checkKernelModules  (report); // 18. Yüklenmiş LKM'ler
-        checkSeccomp        (report); // 19. Seccomp durumu
+        checkKernelIntegrity(report); // 19. Kernel taint / versiyon
+        checkKernelModules  (report); // 20. Yüklenmiş LKM'ler
+        checkSeccomp        (report); // 21. Seccomp durumu
     }
 
     // ── Sonuç karar mekanizması ────────────────────────────────────
@@ -186,7 +188,7 @@ DetectionReport RootDetector::fullScan() {
     uint32_t hookScore = 0;
 
     for (const auto& e : report.evidences) {
-        uint32_t f = static_cast<uint32_t>(e.flag);
+        uint64_t f = (uint64_t)e.flag;
 
         // ── Root kümesi ────────────────────────────────────────────
         bool isRootEvidence =
@@ -200,7 +202,8 @@ DetectionReport RootDetector::fullScan() {
                   DETECT_BOOTLOADER_UNLOCKED|
                   DETECT_KERNEL_TAINTED     |
                   DETECT_PROC_MODULES       |
-                  DETECT_MAGISK_HIDE        )) != 0;
+                  DETECT_MAGISK_HIDE        |
+                  DETECT_ZYGOTE_STATE_ANOM  )) != 0;
 
         // Shamiko root kanıtı da sayılır (root olmadan çalışamaz)
         bool isShamikoEvidence = (f & DETECT_SHAMIKO_COMPANION) != 0;
@@ -223,7 +226,13 @@ DetectionReport RootDetector::fullScan() {
                   DETECT_DELETED_LIB_MAPPED |
                   DETECT_INLINE_HOOK        |
                   DETECT_SYSCALL_HOOK_TIMING|
-                  DETECT_MAPS_GAP_ANOMALY   )) != 0;
+                  DETECT_MAPS_GAP_ANOMALY   |
+                  // v1.0.8 hook kanıtları
+                  DETECT_ZYGOTE_MAPS_DIRTY  |
+                  DETECT_ZYGOTE_TRACED      |
+                  DETECT_GOT_OVERWRITE      |
+                  DETECT_LINKER_NS_ANOMALY  |
+                  DETECT_DOBBY_SHADOWHOOK   )) != 0;
 
         if (isHookEvidence)
             hookScore += e.weight;
