@@ -10,6 +10,8 @@
 
 namespace AntiVirus {
 
+class LocalDB;
+
 // ─────────────────────────────────────────────
 //  Tehdit seviyesi
 // ─────────────────────────────────────────────
@@ -80,7 +82,7 @@ public:
     ~Scanner() = default;
 
     // Tek dosya tara
-    ScanResult scanFile(const std::string& filePath);
+    ScanResult scanFile(const std::string& filePath, LocalDB* sharedDB = nullptr);
 
     // Dizin tara (recursive)
     std::vector<ScanResult> scanDirectory(

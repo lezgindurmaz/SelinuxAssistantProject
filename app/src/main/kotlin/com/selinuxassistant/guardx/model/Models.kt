@@ -139,7 +139,6 @@ data class Evidence(val flag: Int, val weight: Int, val detail: String)
 // ── APK raporu ────────────────────────────────────────────────────
 data class ApkReport(
     val apkPath:        String,
-    val appName:        String = "",
     val packageName:    String,
     val versionName:    String,
     val sha256:         String,

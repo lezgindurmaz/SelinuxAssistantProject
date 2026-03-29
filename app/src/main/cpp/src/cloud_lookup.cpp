@@ -22,12 +22,11 @@
 // Global JavaVM — JNI_OnLoad'da set edilir
 static JavaVM* g_jvm = nullptr;
 
-// Seccomp öz-koruma (seccomp_monitor.cpp'den)
-extern "C" bool initSelfProtection();
+#include "behavioral_analyzer.h"
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     g_jvm = vm;
-    initSelfProtection();  // Seccomp BPF yükle
+    AntiVirus::BehavioralAnalyzer::initSelfProtection();  // Seccomp BPF yükle
     return JNI_VERSION_1_6;
 }
 

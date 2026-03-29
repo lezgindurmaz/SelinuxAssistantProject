@@ -5,235 +5,213 @@ import android.util.Base64
 import android.util.Log
 import com.google.android.play.core.integrity.IntegrityManagerFactory
 import com.google.android.play.core.integrity.IntegrityTokenRequest
-import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.security.SecureRandom
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
-// ══════════════════════════════════════════════════════════════════
-//  PlayIntegrityManager
-//
-//  Google Play Integrity API entegrasyonu.
-//
-//  Akış:
-//    1. Rastgele nonce üret (≥16 bayt, URL-safe Base64)
-//    2. IntegrityManager.requestIntegrityToken() çağır
-//    3. Google imzalı JWS (JSON Web Signature) token al
-//    4. Token'ın payload bölümünü (ortadaki bölüm) decode et
-//    5. deviceIntegrity, appIntegrity, accountDetails ayrıştır
-//
-//  NOT: Üretim ortamında token doğrulaması BACKEND tarafında
-//  yapılmalıdır (Google'ın DecryptIntegrityToken API'si ile).
-//  Bu implementasyon token payload'ını CLIENT tarafında okur —
-//  güvenlik için yeterli değil ama hızlı sonuç göstermek için
-//  kullanışlıdır. İleride backend eklendiğinde doğrulama oraya taşınır.
-//
-//  Verdictler:
-//    MEETS_DEVICE_INTEGRITY   → Gerçek Android donanımı, bootloader kilitli
-//    MEETS_BASIC_INTEGRITY    → Uygulama değiştirilmemiş, imza geçerli
-//    MEETS_STRONG_INTEGRITY   → Donanım destekli güçlü doğrulama (eski: MEETS_STRONG_DEVICE_INTEGRITY)
-//    MEETS_VIRTUAL_INTEGRITY  → Özellik doğrulama ortamı (emülatör/CI için)
-// ══════════════════════════════════════════════════════════════════
+/**
+ * Google Play Integrity API  — v1.0.1 (cloud project numarası gerektirmez)
+ *
+ * Önceki sürümdeki hatalar:
+ *   1. .await() extension kullanıyordu. Bu,
+ *      play-services-tasks bağımlılığını (veya play:core-ktx) gerektiriyor.
+ *      Bağımlılık listede yoktu → NoSuchMethodError / ClassNotFoundException.
+ *
+ *   2. Google Task<T> → coroutine köprüsü elle yazılmadıkça çalışmıyor.
+ *
+ * Çözüm: suspendCancellableCoroutine + addOnSuccessListener/addOnFailureListener
+ *   ile Google Task API'si native olarak bekleniyor.
+ *   Dış bağımlılık gerektirmez.
+ *
+ * Play Integrity Error Codes:
+ *   -1  API_NOT_AVAILABLE     : Play Services güncel değil / kurulu değil
+ *   -2  PLAY_STORE_NOT_FOUND  : Play Store yok veya devre dışı
+ *   -3  NETWORK_ERROR         : İnternet bağlantısı yok
+ *   -4  PLAY_STORE_VERSION_OUTDATED
+ *   -6  CANNOT_BIND_TO_SERVICE
+ *   -7  NONCE_TOO_SHORT       : Nonce < 16 bytes
+ *   -8  NONCE_TOO_LONG        : Nonce > 500 bytes
+ *   -9  GOOGLE_SERVER_UNAVAILABLE
+ *   -10 PLAY_INTEGRITY_API_NOT_AVAILABLE
+ *   -16 CLOUD_PROJECT_NUMBER_IS_INVALID (v1.3.0+)
+ *   -100 TOO_MANY_REQUESTS
+ */
 class PlayIntegrityManager(private val context: Context) {
 
     companion object {
         private const val TAG = "PlayIntegrity"
-
-        // Google Cloud Project numarası (değiştirilmeli — production)
-        // Şimdilik sıfır bırakıldı: token yine de alınır ama
-        // backend doğrulaması için kendi proje numaranızı kullanın
-        private const val CLOUD_PROJECT_NUMBER = 0L
-
-        // Beklenen uygulama paketi
-        private const val EXPECTED_PACKAGE = "com.selinuxassistant.guardx"
     }
 
-    // ── İstekte gönderilecek nonce ──────────────────────────────
-    private fun generateNonce(): String {
-        val bytes = ByteArray(32)
-        SecureRandom().nextBytes(bytes)
-        return Base64.encodeToString(bytes,
-            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
-    }
-
-    // ── Ana fonksiyon: integrity token al ve ayrıştır ──────────
-    suspend fun requestIntegrityVerdict(): IntegrityResult {
-        return try {
-            val manager = IntegrityManagerFactory.create(context)
-            val nonce   = generateNonce()
-
-            val builder = IntegrityTokenRequest.builder().setNonce(nonce)
-            // Cloud Project Number varsa ekle (doğruluk için önerilen)
-            if (CLOUD_PROJECT_NUMBER != 0L)
-                builder.setCloudProjectNumber(CLOUD_PROJECT_NUMBER)
-
-            val tokenResponse = manager.requestIntegrityToken(builder.build()).await()
-            val token = tokenResponse.token()
-
-            Log.i(TAG, "Token alındı (${token.length} karakter)")
-
-            // JWS formatı: header.payload.signature
-            // Payload = ortadaki bölüm, Base64URL
-            val parts = token.split(".")
-            if (parts.size < 2) {
-                return IntegrityResult.Error("Geçersiz token formatı")
-            }
-
-            val payloadJson = try {
-                val decoded = Base64.decode(
-                    parts[1].padEnd(
-                        parts[1].length + (4 - parts[1].length % 4) % 4, '='
-                    ),
-                    Base64.URL_SAFE
-                )
-                String(decoded, Charsets.UTF_8)
-            } catch (e: Exception) {
-                return IntegrityResult.Error("Token decode hatası: ${e.message}")
-            }
-
-            parsePayload(payloadJson)
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Integrity hatası: ${e.message}")
-            // Hata türünü kullanıcıya anlamlı göster
-            val userMsg = when {
-                e.message?.contains("10") == true  -> "Play Store yok / güncel değil"
-                e.message?.contains("-3") == true  -> "İnternet bağlantısı yok"
-                e.message?.contains("-8") == true  -> "Play hizmetleri güncelleme gerektirir"
-                e.message?.contains("403") == true -> "API erişim yetkisi yok (proje numarası?)"
-                else -> "Hata: ${e.message}"
-            }
-            IntegrityResult.Error(userMsg)
+    data class IntegrityVerdict(
+        val meetsDeviceIntegrity  : Boolean,
+        val meetsStrongIntegrity  : Boolean,
+        val meetsVirtualIntegrity : Boolean,
+        val deviceLabels          : List<String>,
+        val appRecognized         : Boolean,
+        val appPackageName        : String,
+        val certDigestShort       : String,
+        val versionCode           : Long,
+        val licensingVerdict      : String   // LICENSED | UNLICENSED | UNEVALUATED
+    ) {
+        /** 0–100 arası Play Integrity güven skoru */
+        val integrityScore: Int get() {
+            var s = 0
+            if (meetsDeviceIntegrity)  s += 40
+            if (meetsStrongIntegrity)  s += 30   // zaten DeviceIntegrity'yi kapsıyor
+            if (appRecognized)         s += 20
+            if (licensingVerdict == "LICENSED") s += 10
+            return s.coerceIn(0, 100)
         }
     }
 
-    // ── Payload JSON'unu IntegrityVerdict'e dönüştür ────────────
-    private fun parsePayload(json: String): IntegrityResult {
+    sealed class IntegrityResult {
+        data class Success(val verdict: IntegrityVerdict) : IntegrityResult()
+        data class Error  (val message: String)           : IntegrityResult()
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    suspend fun requestVerdict(): IntegrityResult = withContext(Dispatchers.IO) {
+        try {
+            val manager = IntegrityManagerFactory.create(context)
+            val nonce   = generateNonce()
+
+            // v1.0.1: sadece setNonce() — setCloudProjectNumber() YOK
+            val request = IntegrityTokenRequest.builder()
+                .setNonce(nonce)
+                .build()
+
+            // Google Task → suspendCancellableCoroutine köprüsü
+            val token = awaitTask<com.google.android.play.core.integrity.IntegrityTokenResponse> { cb ->
+                manager.requestIntegrityToken(request)
+                    .addOnSuccessListener { cb.resume(it) }
+                    .addOnFailureListener { cb.resumeWithException(it) }
+            }.token()
+
+            Log.i(TAG, "Token alındı (${token.length} karakter)")
+            parseToken(token)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Play Integrity hatası: ${e.javaClass.simpleName}: ${e.message}")
+            IntegrityResult.Error(humanizeError(e.message ?: "Bilinmeyen hata"))
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Google Task<T> → suspend coroutine köprüsü
+    // ─────────────────────────────────────────────────────────────
+    private suspend fun <T> awaitTask(
+        block: (kotlin.coroutines.Continuation<T>) -> Unit
+    ): T = suspendCancellableCoroutine { cont ->
+        block(cont)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Nonce üretimi
+    // Gereksinim: URL-safe Base64, 16–500 karakter (byte değil karakter)
+    // ─────────────────────────────────────────────────────────────
+    private fun generateNonce(): String {
+        val raw = ByteArray(32)
+        SecureRandom().nextBytes(raw)
+        // URL_SAFE + NO_WRAP + NO_PADDING → padding olmayan URL-safe Base64
+        // 32 byte → 43 karakter (16–500 arasında ✓)
+        return Base64.encodeToString(raw, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // JWS token parse et
+    // Format: base64url(header) . base64url(payload) . base64url(signature)
+    // ─────────────────────────────────────────────────────────────
+    private fun parseToken(token: String): IntegrityResult {
         return try {
-            val root = JSONObject(json)
-            Log.d(TAG, "Payload: $json")
+            val parts = token.split(".")
+            if (parts.size < 2)
+                return IntegrityResult.Error("Geçersiz JWS token formatı (${parts.size} parça)")
 
-            // ── requestDetails ───────────────────────────────────
-            val req = root.optJSONObject("requestDetails")
-            val requestPackage = req?.optString("requestPackageName") ?: ""
-            val nonce          = req?.optString("nonce")              ?: ""
-
-            // ── appIntegrity ─────────────────────────────────────
-            val app           = root.optJSONObject("appIntegrity")
-            val appRecog      = app?.optString("appRecognitionVerdict") ?: ""
-            val appPkg        = app?.optString("packageName")           ?: ""
-            val certDigests   = buildList {
-                app?.optJSONArray("certificateSha256Digest")?.let { arr ->
-                    repeat(arr.length()) { add(arr.getString(it)) }
-                }
+            // Base64URL padding ekle ve decode et
+            val payload = parts[1].let { raw ->
+                val padded = raw + "=".repeat((4 - raw.length % 4) % 4)
+                String(Base64.decode(padded, Base64.URL_SAFE), Charsets.UTF_8)
             }
-            val versionCode   = app?.optLong("versionCode") ?: 0L
+            Log.d(TAG, "Payload parse ediliyor")
 
-            // ── deviceIntegrity ──────────────────────────────────
-            val dev           = root.optJSONObject("deviceIntegrity")
-            val deviceLabels  = buildList {
+            val root = JSONObject(payload)
+
+            // deviceIntegrity
+            val dev    = root.optJSONObject("deviceIntegrity")
+            val labels = buildList {
                 dev?.optJSONArray("deviceRecognitionVerdict")?.let { arr ->
                     repeat(arr.length()) { add(arr.getString(it)) }
                 }
             }
 
-            // ── accountDetails ───────────────────────────────────
-            val acc           = root.optJSONObject("accountDetails")
-            val licenseVerdict = acc?.optString("appLicensingVerdict") ?: ""
+            // appIntegrity
+            val app      = root.optJSONObject("appIntegrity")
+            val appRecog = app?.optString("appRecognitionVerdict") ?: ""
+            val appPkg   = app?.optString("packageName") ?: ""
+            val certDig  = buildList {
+                app?.optJSONArray("certificateSha256Digest")?.let { arr ->
+                    repeat(arr.length()) { add(arr.getString(it)) }
+                }
+            }
+            val vCode = app?.optLong("versionCode") ?: 0L
 
-            // ── environmentDetails (yeni API) ─────────────────────
-            val env           = root.optJSONObject("environmentDetails")
-            val envVerdict    = env?.optString("environmentVerdict")    ?: ""
+            // accountDetails
+            val acc      = root.optJSONObject("accountDetails")
+            val licensing = acc?.optString("appLicensingVerdict") ?: "UNEVALUATED"
 
-            // ── Güvenlik puanı hesapla ────────────────────────────
-            val verdict = IntegrityVerdict(
-                // Cihaz
-                meetsDeviceIntegrity  = deviceLabels.contains("MEETS_DEVICE_INTEGRITY"),
-                meetsStrongIntegrity  = deviceLabels.contains("MEETS_STRONG_INTEGRITY"),
-                meetsVirtualIntegrity = deviceLabels.contains("MEETS_VIRTUAL_INTEGRITY"),
-                deviceLabels          = deviceLabels,
+            Log.i(TAG, "DeviceLabels: $labels, AppRecog: $appRecog, Licensing: $licensing")
 
-                // Uygulama
-                appRecognized         = appRecog == "PLAY_RECOGNIZED",
-                appUnrecognized       = appRecog == "UNRECOGNIZED_VERSION",
-                appPackageName        = appPkg,
-                certDigests           = certDigests,
-                versionCode           = versionCode,
-
-                // Hesap
-                licensingVerdict      = licenseVerdict,
-
-                // Ortam
-                environmentVerdict    = envVerdict,
-
-                // Meta
-                requestPackage        = requestPackage,
-                rawPayload            = json
+            IntegrityResult.Success(
+                IntegrityVerdict(
+                    meetsDeviceIntegrity  = "MEETS_DEVICE_INTEGRITY"  in labels,
+                    meetsStrongIntegrity  = "MEETS_STRONG_INTEGRITY"  in labels,
+                    meetsVirtualIntegrity = "MEETS_VIRTUAL_INTEGRITY" in labels,
+                    deviceLabels          = labels,
+                    appRecognized         = appRecog == "PLAY_RECOGNIZED",
+                    appPackageName        = appPkg,
+                    certDigestShort       = certDig.firstOrNull()?.take(16) ?: "",
+                    versionCode           = vCode,
+                    licensingVerdict      = licensing
+                )
             )
-
-            IntegrityResult.Success(verdict)
-
         } catch (e: Exception) {
-            IntegrityResult.Error("JSON ayrıştırma hatası: ${e.message}")
+            Log.e(TAG, "Token parse hatası: ${e.message}")
+            IntegrityResult.Error("Token ayrıştırılamadı: ${e.message}")
         }
     }
-}
 
-// ══════════════════════════════════════════════════════════════════
-//  Veri modelleri
-// ══════════════════════════════════════════════════════════════════
-
-data class IntegrityVerdict(
-    // ── Cihaz ────────────────────────────────────────────────────
-    /** Gerçek Android donanımı, TrustZone, bootloader kilitli */
-    val meetsDeviceIntegrity:  Boolean,
-    /** Donanım destekli güçlü kanıt (Play Protect sertifikalı) */
-    val meetsStrongIntegrity:  Boolean,
-    /** Özellik doğrulama/emülatör ortamı */
-    val meetsVirtualIntegrity: Boolean,
-    val deviceLabels:          List<String>,
-
-    // ── Uygulama ─────────────────────────────────────────────────
-    /** Play Store'da kayıtlı, orijinal imza */
-    val appRecognized:    Boolean,
-    /** Bilinmeyen sürüm / değiştirilmiş */
-    val appUnrecognized:  Boolean,
-    val appPackageName:   String,
-    val certDigests:      List<String>,
-    val versionCode:      Long,
-
-    // ── Hesap lisanslama ─────────────────────────────────────────
-    /** LICENSED | UNLICENSED | UNEVALUATED */
-    val licensingVerdict: String,
-
-    // ── Ortam ────────────────────────────────────────────────────
-    val environmentVerdict: String,
-
-    // ── Meta ─────────────────────────────────────────────────────
-    val requestPackage: String,
-    val rawPayload:     String
-) {
-    /** 0–100 arası genel güven skoru */
-    val trustScore: Int get() {
-        var score = 0
-        if (meetsDeviceIntegrity)  score += 40
-        if (meetsStrongIntegrity)  score += 30
-        if (appRecognized)         score += 20
-        if (licensingVerdict == "LICENSED") score += 10
-        return score.coerceIn(0, 100)
+    // ─────────────────────────────────────────────────────────────
+    // Hata kodunu kullanıcı dostu mesaja çevir
+    // ─────────────────────────────────────────────────────────────
+    private fun humanizeError(msg: String): String = when {
+        msg.contains("-1")  || msg.contains("API_NOT_AVAILABLE")         ->
+            "Play Services güncel değil veya kurulu değil"
+        msg.contains("-2")  || msg.contains("PLAY_STORE_NOT_FOUND")      ->
+            "Play Store bulunamadı veya devre dışı bırakılmış"
+        msg.contains("-3")  || msg.contains("NETWORK_ERROR")             ->
+            "İnternet bağlantısı yok"
+        msg.contains("-4")  || msg.contains("PLAY_STORE_VERSION_OUTDATED") ->
+            "Play Store sürümü güncel değil, lütfen güncelleyin"
+        msg.contains("-6")  || msg.contains("CANNOT_BIND")               ->
+            "Play Services'e bağlanılamadı"
+        msg.contains("-7")  || msg.contains("NONCE_TOO_SHORT")           ->
+            "İç hata: nonce çok kısa (rapor edin)"
+        msg.contains("-8")  || msg.contains("NONCE_TOO_LONG")            ->
+            "İç hata: nonce çok uzun (rapor edin)"
+        msg.contains("-9")  || msg.contains("GOOGLE_SERVER_UNAVAILABLE") ->
+            "Google sunucuları geçici olarak kullanılamıyor"
+        msg.contains("-10") || msg.contains("PLAY_INTEGRITY_API_NOT_AVAILABLE") ->
+            "Play Integrity API bu cihazda desteklenmiyor"
+        msg.contains("-16") || msg.contains("CLOUD_PROJECT_NUMBER")      ->
+            "API yapılandırma hatası (geliştirici hatası)"
+        msg.contains("-100") || msg.contains("TOO_MANY_REQUESTS")        ->
+            "Çok fazla istek gönderildi, lütfen bekleyin"
+        msg.contains("NoSuchMethod") || msg.contains("ClassNotFound")    ->
+            "Kütüphane uyumsuzluğu (derleme hatası)"
+        else -> "Play Integrity: $msg"
     }
-
-    /** İnsan okunabilir özet */
-    val summary: String get() = buildString {
-        if (meetsStrongIntegrity)       append("Güçlü donanım doğrulaması ✓\n")
-        else if (meetsDeviceIntegrity)  append("Cihaz bütünlüğü ✓\n")
-        else                            append("⚠ Cihaz bütünlüğü doğrulanamadı\n")
-        if (appRecognized) append("Uygulama Play Store'da tanındı ✓\n")
-        else               append("⚠ Uygulama tanınmadı (değiştirilmiş?)\n")
-        if (meetsVirtualIntegrity) append("⚠ Sanal/emülatör ortamı tespit edildi\n")
-    }.trimEnd()
-}
-
-sealed class IntegrityResult {
-    data class Success(val verdict: IntegrityVerdict) : IntegrityResult()
-    data class Error  (val message: String)           : IntegrityResult()
 }

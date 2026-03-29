@@ -98,9 +98,10 @@ Java_com_selinuxassistant_guardx_engine_NativeEngine_dbInit(
     }
 
     // DB'yi aç
-    g_db = std::make_unique<AntiVirus::LocalDB>(db_path);
-    bool ok = g_db->open();
-    LOGI("DB init: %s, %zu imza", ok ? "OK" : "FAIL", g_db->getSignatureCount());
+    auto db = std::make_unique<AntiVirus::LocalDB>(db_path);
+    bool ok = db->open();
+    LOGI("DB init: %s, %zu imza", ok ? "OK" : "FAIL", db->getSignatureCount());
+    AntiVirus::LocalDB::setGlobalInstance(std::move(db));
     return ok ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -110,7 +111,8 @@ JNIEXPORT jstring JNICALL
 Java_com_selinuxassistant_guardx_engine_NativeEngine_dbGetVersion(
     JNIEnv* env, jobject /*thiz*/)
 {
-    std::string ver = g_db ? g_db->getDBVersion() : "0.0.0";
+    auto* db = AntiVirus::LocalDB::getGlobalInstance();
+    std::string ver = db ? db->getDBVersion() : "0.0.0";
     return env->NewStringUTF(ver.c_str());
 }
 
@@ -120,7 +122,8 @@ JNIEXPORT jlong JNICALL
 Java_com_selinuxassistant_guardx_engine_NativeEngine_dbGetCount(
     JNIEnv* /*env*/, jobject /*thiz*/)
 {
-    return g_db ? static_cast<jlong>(g_db->getSignatureCount()) : 0L;
+    auto* db = AntiVirus::LocalDB::getGlobalInstance();
+    return db ? static_cast<jlong>(db->getSignatureCount()) : 0L;
 }
 
 // ── JNI: dbApplyDelta ────────────────────────────────────────────
@@ -130,12 +133,13 @@ JNIEXPORT jint JNICALL
 Java_com_selinuxassistant_guardx_engine_NativeEngine_dbApplyDelta(
     JNIEnv* env, jobject /*thiz*/, jstring jdelta_path)
 {
-    if (!g_db || !g_db->isOpen()) return -1;
+    auto* db = AntiVirus::LocalDB::getGlobalInstance();
+    if (!db || !db->isOpen()) return -1;
 
     const char* delta_path = env->GetStringUTFChars(jdelta_path, nullptr);
-    bool ok = g_db->importSignatures(delta_path);
+    bool ok = db->importSignatures(delta_path);
     env->ReleaseStringUTFChars(jdelta_path, delta_path);
 
     if (!ok) return -1;
-    return static_cast<jint>(g_db->getSignatureCount());
+    return static_cast<jint>(db->getSignatureCount());
 }

@@ -24,6 +24,9 @@ struct DBRecord {
 // Depolama: ikili imza dosyası, açılışta unordered_map'e yüklenir → O(1) arama
 class LocalDB {
 public:
+    static LocalDB* getGlobalInstance();
+    static void setGlobalInstance(std::unique_ptr<LocalDB> db);
+public:
     explicit LocalDB(const std::string& dbPath);
     ~LocalDB() = default;
 

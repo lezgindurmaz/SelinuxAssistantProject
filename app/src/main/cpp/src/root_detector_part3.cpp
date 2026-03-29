@@ -298,9 +298,8 @@ void RootDetector::checkMemoryMaps(DetectionReport& report) {
 
         for (int i = 0; SUSPICIOUS_LIBS[i]; ++i) {
             if (containsString(libLower, SUSPICIOUS_LIBS[i])) {
-                // Sistem kütüphanesi olma ihtimaline karşı sev seviyesini düşür ve sadece şüpheli işaretle (Sarı/Low)
                 addEvidence(report, DETECT_MAPS_INJECTION,
-                            "Şüpheli kütüphane maps'de: " + libPath.substr(0, 80), 5);
+                            "Şüpheli kütüphane maps'de: " + libPath.substr(0, 80), 8);
                 break; // Aynı satırdan çoklu kanıt üretme
             }
         }
@@ -309,7 +308,7 @@ void RootDetector::checkMemoryMaps(DetectionReport& report) {
         if (containsString(line, "/data/local/tmp/") &&
             containsString(line, ".so")) {
             addEvidence(report, DETECT_MAPS_INJECTION,
-                        "tmp'den .so yüklendi: " + libPath.substr(0, 80), 5);
+                        "tmp'den .so yüklendi: " + libPath.substr(0, 80), 7);
         }
     }
 }

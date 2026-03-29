@@ -9,130 +9,99 @@
 namespace AntiVirus {
 
 // ═══════════════════════════════════════════════════════════
-//  Tespit kategorileri  (bitmask)
+//  Tespit kategorileri  (bitmask — birden fazla aynı anda olabilir)
 // ═══════════════════════════════════════════════════════════
-enum DetectionFlag : uint64_t {
+enum DetectionFlag : uint32_t {
     DETECT_NONE               = 0,
 
-    // ── Temel root kanıtları ─────────────────────────────
-    DETECT_SU_BINARY          = (1ULL <<  0),
-    DETECT_ROOT_PACKAGES      = (1ULL <<  1),
-    DETECT_WRITABLE_SYSTEM    = (1ULL <<  2),
-    DETECT_RW_SYSTEM_MOUNT    = (1ULL <<  3),
-    DETECT_ROOT_CLOAKING      = (1ULL <<  4),
-    DETECT_BUILD_PROPS        = (1ULL <<  5),
-    DETECT_DANGEROUS_PROPS    = (1ULL <<  6),
-    DETECT_SHELL_ROOT_ACCESS  = (1ULL <<  7),
+    // Root kanıtları
+    DETECT_SU_BINARY          = (1u <<  0),  // su binary bulundu
+    DETECT_ROOT_PACKAGES      = (1u <<  1),  // Magisk/SuperSU paketi
+    DETECT_WRITABLE_SYSTEM    = (1u <<  2),  // /system yazılabilir mount
+    DETECT_RW_SYSTEM_MOUNT    = (1u <<  3),  // /proc/mounts'da rw system
+    DETECT_ROOT_CLOAKING      = (1u <<  4),  // Hide/cloak girişimi tespit
+    DETECT_BUILD_PROPS        = (1u <<  5),  // ro.debuggable=1 vb.
+    DETECT_DANGEROUS_PROPS    = (1u <<  6),  // test-keys, dev-keys
+    DETECT_SHELL_ROOT_ACCESS  = (1u <<  7),  // id komutu root döndürdü
 
-    // ── Bootloader ───────────────────────────────────────
-    DETECT_BOOTLOADER_UNLOCKED = (1ULL <<  8),
-    DETECT_OEM_UNLOCK_ENABLED  = (1ULL <<  9),
-    DETECT_AVB_DISABLED        = (1ULL << 10),
+    // Bootloader
+    DETECT_BOOTLOADER_UNLOCKED = (1u <<  8), // Bootloader açık
+    DETECT_OEM_UNLOCK_ENABLED  = (1u <<  9), // OEM unlock aktif
+    DETECT_AVB_DISABLED        = (1u << 10), // Android Verified Boot kapalı
 
-    // ── Kernel bütünlüğü ─────────────────────────────────
-    DETECT_KERNEL_TAINTED      = (1ULL << 11),
-    DETECT_SELINUX_DISABLED    = (1ULL << 12),
-    DETECT_KALLSYMS_EXPOSED    = (1ULL << 13),
-    DETECT_KERNEL_VERSION_MOD  = (1ULL << 14),
-    DETECT_PROC_MODULES        = (1ULL << 15),
-    DETECT_SECCOMP_DISABLED    = (1ULL << 16),
+    // Kernel bütünlüğü
+    DETECT_KERNEL_TAINTED      = (1u << 11), // /proc/sys/kernel/tainted != 0
+    DETECT_SELINUX_DISABLED    = (1u << 12), // SELinux permissive/disabled
+    DETECT_KALLSYMS_EXPOSED    = (1u << 13), // /proc/kallsyms okunabilir
+    DETECT_KERNEL_VERSION_MOD  = (1u << 14), // Kernel sürümünde şüpheli string
+    DETECT_PROC_MODULES        = (1u << 15), // Yetkisiz kernel modülü
+    DETECT_SECCOMP_DISABLED    = (1u << 16), // Seccomp filtresi yok
 
-    // ── Hook framework'leri ──────────────────────────────
-    DETECT_FRIDA               = (1ULL << 17),
-    DETECT_XPOSED              = (1ULL << 18),
-    DETECT_MAGISK_HIDE         = (1ULL << 19),
-    DETECT_SUBSTRATE           = (1ULL << 20),
-    DETECT_MEMORY_HOOKS        = (1ULL << 21),
-    DETECT_SUSPICIOUS_FDS      = (1ULL << 22),
-    DETECT_PTRACE_ATTACHED     = (1ULL << 23),
-    DETECT_MAPS_INJECTION      = (1ULL << 24),
-
-    // ── Bellek Haritalama / Timing (v1.0.7) ──────────────
-    DETECT_ANON_RWX_MAPPING    = (1ULL << 25),
-    DETECT_SHAMIKO_COMPANION   = (1ULL << 26),
-    DETECT_DELETED_LIB_MAPPED  = (1ULL << 27),
-    DETECT_INLINE_HOOK         = (1ULL << 28),
-    DETECT_SYSCALL_HOOK_TIMING = (1ULL << 29),
-    DETECT_MAPS_GAP_ANOMALY    = (1ULL << 30),
-
-    // ══ YENİ: Zygote Analizi (v1.0.8) ════════════════════
-    // Zygote sürecinin maps'inde şüpheli kütüphane tespit edildi.
-    DETECT_ZYGOTE_MAPS_DIRTY   = (1ULL << 31),
-    // Zygote'un UID/GID durumu anormal.
-    DETECT_ZYGOTE_STATE_ANOM   = (1ULL << 32),
-    // Zygote üzerinde başka bir süreç izleme yapıyor (TracerPid != 0).
-    DETECT_ZYGOTE_TRACED       = (1ULL << 33),
-
-    // ══ YENİ: Derin Hook Analizi (v1.0.8) ════════════════
-    // GOT (Global Offset Table) girişleri beklenen adres aralığının dışına işaret ediyor.
-    DETECT_GOT_OVERWRITE       = (1ULL << 34),
-    // Android linker namespace'i beklenmedik bir kütüphane yüklemiş.
-    DETECT_LINKER_NS_ANOMALY   = (1ULL << 35),
-    // Dobby veya ShadowHook kütüphanesinin karakteristik bellekteki imzaları tespit edildi.
-    DETECT_DOBBY_SHADOWHOOK    = (1ULL << 36),
+    // Hook framework'leri
+    DETECT_FRIDA               = (1u << 17), // Frida agent/server
+    DETECT_XPOSED              = (1u << 18), // Xposed Framework
+    DETECT_MAGISK_HIDE         = (1u << 19), // MagiskHide / Zygisk
+    DETECT_SUBSTRATE           = (1u << 20), // Cydia Substrate
+    DETECT_MEMORY_HOOKS        = (1u << 21), // PLT/GOT hook in bellek
+    DETECT_SUSPICIOUS_FDS      = (1u << 22), // /proc/self/fd şüpheli dosya
+    DETECT_PTRACE_ATTACHED     = (1u << 23), // Debugger eklenmiş
+    DETECT_MAPS_INJECTION      = (1u << 24), // /proc/self/maps şüpheli lib
 };
 
 // ═══════════════════════════════════════════════════════════
 //  Risk seviyesi
 // ═══════════════════════════════════════════════════════════
 enum class RiskLevel {
-    SAFE        = 0,
-    LOW         = 1,
-    MEDIUM      = 2,
-    HIGH        = 3,
-    CRITICAL    = 4
+    SAFE        = 0,  // Hiçbir şüpheli bulgu yok
+    LOW         = 1,  // Tek zayıf kanıt (false positive olabilir)
+    MEDIUM      = 2,  // Birden fazla zayıf veya tek güçlü kanıt
+    HIGH        = 3,  // Root/hook kesinleşti
+    CRITICAL    = 4   // Root + aktif hook aynı anda
 };
 
 // ═══════════════════════════════════════════════════════════
-//  Tek kanıt kaydı
+//  Tek bir kanıt kaydı
 // ═══════════════════════════════════════════════════════════
 struct Evidence {
     DetectionFlag flag;
-    std::string   detail;
-    uint8_t       weight;   // 1–10
+    std::string   detail;   // Hangi dosya/prop/değer tetikledi
+    uint8_t       weight;   // 1-10 arası güven ağırlığı
 };
 
 // ═══════════════════════════════════════════════════════════
 //  Komple tespit raporu
 // ═══════════════════════════════════════════════════════════
 struct DetectionReport {
-    uint64_t              flags;
+    uint32_t              flags;         // OR'lanmış DetectionFlag'ler
     RiskLevel             riskLevel;
-    std::vector<Evidence> evidences;
-    bool                  isRooted;
-    bool                  isHooked;
+    std::vector<Evidence> evidences;     // Her kanıt ayrı ayrı
+    bool                  isRooted;      // Sonuç: root var mı?
+    bool                  isHooked;      // Sonuç: hook var mı?
     bool                  bootloaderUnlocked;
     double                scanTimeMs;
 
+    // JSON'a dönüştür (JNI bridge için)
     std::string toJSON() const;
 };
 
 // ═══════════════════════════════════════════════════════════
-//  Dedektör konfigürasyonu
+//  Dedektör konfigürasyonu  — false-positive dengesini ayarlar
 // ═══════════════════════════════════════════════════════════
 struct DetectorConfig {
-    uint8_t  rootThresholdScore      = 7;
-    uint8_t  hookThresholdScore      = 6;
+    // Kaç puanın üstünde ROOTED sayalım?
+    // Normal cihazda 0 puan; yanlış pozitifsizlik için 7+ öner
+    uint8_t  rootThresholdScore     = 7;
+    uint8_t  hookThresholdScore     = 6;
+
+    // Developer cihaz toleransı
+    // true → ADB açık / debuggable build'ler için puanı hafiflet
     bool     tolerateDeveloperDevice = false;
-    bool     deepKernelCheck         = true;
-    bool     checkKallsyms           = true;
 
-    // Zygote analizi — root olmadan erişim kısıtlı olabilir
-    bool     checkZygote             = true;
+    // Çekirdek kontrollerini de yap (yavaş ama kapsamlı)
+    bool     deepKernelCheck        = true;
 
-    // GOT hook analizi kaç fonksiyonu kontrol etsin?
-    uint32_t gotCheckDepth           = 12;
-
-    // Timing kontrolü kaç iterasyon çalıştırsın?
-    // Daha fazla = daha güvenilir ama yavaş.
-    // Öneri: hızlı tarama için 200, derin tarama için 500.
-    uint32_t timingIterations        = 200;
-
-    // Timing eşiği: libc/doğrudan oran bu değeri aşarsa hook şüphesi.
-    // 3.0 = libc çağrısı doğrudan syscall'dan 3x daha yavaş.
-    // Çok düşük değer → false-positive; çok yüksek → kaçırma riski.
-    // Öneri: 3.0–4.0 arası; 3.5 dengeli.
-    float    timingHookRatio         = 3.5f;
+    // /proc/kallsyms erişimi (root gerektirmeden erişilebiliyorsa şüpheli)
+    bool     checkKallsyms          = true;
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -143,9 +112,10 @@ public:
     explicit RootDetector(const DetectorConfig& config = DetectorConfig{});
     ~RootDetector() = default;
 
+    // Tüm kontrolleri çalıştır (asıl giriş noktası)
     DetectionReport fullScan();
 
-    // Mevcut tekil kontroller
+    // Tekil kontroller (dilerse UI ayrı ayrı çağırabilir)
     void checkRootBinaries    (DetectionReport& report);
     void checkRootPackages    (DetectionReport& report);
     void checkBuildProperties (DetectionReport& report);
@@ -161,49 +131,25 @@ public:
     void checkPtrace          (DetectionReport& report);
     void checkKernelModules   (DetectionReport& report);
     void checkSeccomp         (DetectionReport& report);
-    void checkKernelSu        (DetectionReport& report);
-    void checkAPatch          (DetectionReport& report);
-
-    // ── YENİ kontroller ──────────────────────────────────
-    // Gelişmiş bellek haritası analizi:
-    //   - Anonim RWX bölge tespiti (ART/JIT filtreli)
-    //   - Shamiko / Zygisk companion imzası
-    //   - Silinmiş kütüphane eşlemesi
-    //   - Harita boşluğu / satır sayısı anomalisi
-    void checkMemoryMapsAdvanced (DetectionReport& report);
-
-    // Syscall zamanlama analizi:
-    //   - Inline PLT/GOT prologue hook tespiti
-    //   - Doğrudan asm syscall vs. libc zamanlama karşılaştırması
-    void checkSyscallTiming      (DetectionReport& report);
-
-    // ── YENİ: Derin Zygote Analizi ──────────────────────
-    void checkZygoteIntegrity (DetectionReport& report);
-
-    // ── YENİ: Derin Hook Analizi ─────────────────────────
-    void checkDeepHookAnalysis(DetectionReport& report);
 
 private:
     DetectorConfig m_config;
 
+    // Yardımcılar
     void addEvidence(DetectionReport& r, DetectionFlag flag,
                      const std::string& detail, uint8_t weight);
 
-    bool        fileExists      (const std::string& path);
-    bool        dirExists       (const std::string& path);
-    bool        isReadable      (const std::string& path);
-    std::string readFile        (const std::string& path, size_t maxBytes = 4096);
-    std::string readSystemProp  (const std::string& key);
-    bool        containsString  (const std::string& haystack, const std::string& needle);
+    bool   fileExists  (const std::string& path);
+    bool   dirExists   (const std::string& path);
+    bool   isReadable  (const std::string& path);
+    std::string readFile       (const std::string& path, size_t maxBytes = 4096);
+    std::string readSystemProp (const std::string& key);
+    bool   containsString      (const std::string& haystack, const std::string& needle);
 
-    RiskLevel   computeRiskLevel  (const DetectionReport& r);
-    uint32_t    computeTotalScore (const DetectionReport& r);
-
-    // Zygote yardımcıları
-    pid_t       findZygotePid     (bool prefer64 = true);
-    std::string readProcFile      (pid_t pid, const char* file,
-                                   size_t maxBytes = 65536);
+    RiskLevel   computeRiskLevel (const DetectionReport& r);
+    uint32_t    computeTotalScore(const DetectionReport& r);
 };
 
 } // namespace AntiVirus
+
 #endif // ROOT_DETECTOR_H

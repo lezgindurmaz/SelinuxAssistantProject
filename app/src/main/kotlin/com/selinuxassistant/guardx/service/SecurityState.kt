@@ -1,14 +1,20 @@
 package com.selinuxassistant.guardx.service
 
-import com.selinuxassistant.guardx.model.RootReport
-import com.selinuxassistant.guardx.model.ApkReport
-import com.selinuxassistant.guardx.model.BehaviorReport
-import com.selinuxassistant.guardx.service.IntegrityVerdict
+import com.selinuxassistant.guardx.model.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+/**
+ * SecurityState
+ *
+ * Uygulamanin tum tarama sonuclarini merkezi olarak tutan Singleton.
+ * ViewModels bu veriyi gozlemler (Flow). Navigasyon sirasinda verinin
+ * kaybolmasini onler ve birlesik bir "Guvenlik Skoru" hesaplar.
+ */
 object SecurityState {
+
+    // --- Veri Kaynaklari (StateFlow) ---
     private val _rootReport = MutableStateFlow<RootReport?>(null)
     val rootReport: StateFlow<RootReport?> = _rootReport.asStateFlow()
 
@@ -18,58 +24,48 @@ object SecurityState {
     private val _lastBehaviorReport = MutableStateFlow<BehaviorReport?>(null)
     val lastBehaviorReport: StateFlow<BehaviorReport?> = _lastBehaviorReport.asStateFlow()
 
-    private val _integrityVerdict = MutableStateFlow<IntegrityVerdict?>(null)
-    val integrityVerdict: StateFlow<IntegrityVerdict?> = _integrityVerdict.asStateFlow()
+    // --- Guncelleme Metotlari ---
+    fun updateRoot(report: RootReport) {
+        _rootReport.value = report
+    }
 
-    fun updateRoot(report: RootReport) { _rootReport.value = report }
-    fun updateApks(reports: List<ApkReport>) { _lastApkReports.value = reports }
-    fun updateBehavior(report: BehaviorReport) { _lastBehaviorReport.value = report }
-    fun updateIntegrity(verdict: IntegrityVerdict) { _integrityVerdict.value = verdict }
+    fun updateApks(reports: List<ApkReport>) {
+        _lastApkReports.value = reports
+    }
 
+    fun updateBehavior(report: BehaviorReport) {
+        _lastBehaviorReport.value = report
+    }
+
+    // --- Birlesik Skor Hesaplama ---
+    /**
+     * Genel Guvenlik Skoru (0-100)
+     *
+     * Formül:
+     * - Root tespiti: %50 agirlik (Root varsa skor max 50 olur)
+     * - Zararli APK: %30 agirlik (Her yuksek riskli APK skoru dusurur)
+     * - Supheli Davranis: %20 agirlik
+     */
     fun calculateOverallScore(): Int {
-        val root = _rootReport.value
-        val apks = _lastApkReports.value
-        val behavior = _lastBehaviorReport.value
-        val integrity = _integrityVerdict.value
+        var baseScore = 100
 
-        // Initial state: low score to encourage scanning
-        if (root == null && apks.isEmpty() && behavior == null && integrity == null) return 0
+        // 1. Root Kontrolü (%50)
+        _rootReport.value?.let { r ->
+            if (r.isRooted) baseScore -= 40
+            if (r.isHooked) baseScore -= 30
+            if (r.bootloaderUnlocked) baseScore -= 10
+        } ?: run { baseScore -= 5 } // Henuz taranmadiysa hafif dusur
 
-        var score = 100
+        // 2. APK Kontrolü (%30)
+        val highRiskApks = _lastApkReports.value.count { it.overallScore > 60 }
+        baseScore -= (highRiskApks * 15).coerceAtMost(30)
 
-        // Root impact (High Weight)
-        if (root != null) {
-            score -= when (root.riskLevel) {
-                1 -> 15; 2 -> 35; 3 -> 70; 4 -> 95; else -> 0
-            }
-        } else {
-            score -= 30 // High penalty for no root scan
+        // 3. Davranis Kontrolü (%20)
+        _lastBehaviorReport.value?.let { b ->
+            if (b.highestRisk > 70) baseScore -= 20
+            else if (b.highestRisk > 30) baseScore -= 10
         }
 
-        // APK impact (Medium Weight)
-        if (apks.isNotEmpty()) {
-            val malwareCount = apks.count { it.verdict == "MALWARE" }
-            val suspiciousCount = apks.count { it.verdict == "SUSPICIOUS" }
-            score -= (malwareCount * 25).coerceAtMost(50)
-            score -= (suspiciousCount * 10).coerceAtMost(25)
-        } else {
-            score -= 25 // Penalty for no app scan
-        }
-
-        // Behavior impact (Medium Weight)
-        if (behavior != null) {
-            val highRiskCount = behavior.profiles.count { it.riskScore >= 40 }
-            score -= (highRiskCount * 15).coerceAtMost(30)
-        } else {
-            score -= 15 // Penalty for no behavior monitor
-        }
-
-        // Integrity impact
-        if (integrity != null) {
-            if (!integrity.meetsDeviceIntegrity) score -= 20
-            if (!integrity.appRecognized) score -= 10
-        }
-
-        return score.coerceIn(5, 100) // Minimum 5 as per user request for "second scan"
+        return baseScore.coerceIn(0, 100)
     }
 }

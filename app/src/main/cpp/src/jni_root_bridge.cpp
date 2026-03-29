@@ -42,10 +42,23 @@ Java_com_selinuxassistant_guardx_engine_NativeEngine_rootQuickScan(
         JNIEnv* env, jobject /* this */)
 {
     DetectorConfig config;
-    config.deepKernelCheck = false;
+    config.deepKernelCheck = false;  // Sadece hızlı kontroller
 
     RootDetector detector(config);
-    DetectionReport report = detector.fullScan(); // Use fullScan logic but with shallow config
+
+    DetectionReport report;
+    report.flags     = DETECT_NONE;
+    report.isRooted  = false;
+    report.isHooked  = false;
+    report.bootloaderUnlocked = false;
+
+    detector.checkBuildProperties(report);
+    detector.checkRootBinaries   (report);
+    detector.checkSELinux        (report);
+    detector.checkBootloader     (report);
+    detector.checkFrida          (report);
+    detector.checkMagisk         (report);
+    detector.checkPtrace         (report);
 
     return env->NewStringUTF(report.toJSON().c_str());
 }

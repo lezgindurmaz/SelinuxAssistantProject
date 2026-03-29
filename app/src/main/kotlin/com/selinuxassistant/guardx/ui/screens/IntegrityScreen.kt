@@ -1,7 +1,8 @@
 package com.selinuxassistant.guardx.ui.screens
 
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -20,15 +21,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.selinuxassistant.guardx.service.IntegrityResult
-import com.selinuxassistant.guardx.service.IntegrityVerdict
-import androidx.compose.material3.Divider
+import com.selinuxassistant.guardx.service.PlayIntegrityManager
+import com.selinuxassistant.guardx.service.TeeAttestationManager
 import com.selinuxassistant.guardx.ui.components.ScanPulse
 import com.selinuxassistant.guardx.ui.theme.GuardXColors
 
-// ══════════════════════════════════════════════════════════════════
-//  IntegrityScreen — Google Play Integrity API sonuç ekranı
-// ══════════════════════════════════════════════════════════════════
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun IntegrityScreen(
@@ -45,13 +42,11 @@ fun IntegrityScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(Icons.Default.VerifiedUser, null,
                             Modifier.size(20.dp), tint = GuardXColors.Primary)
-                        Text("Play Integrity", fontWeight = FontWeight.SemiBold)
+                        Text("Cihaz Doğrulama", fontWeight = FontWeight.SemiBold)
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, "Geri")
-                    }
+                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Geri") }
                 }
             )
         }
@@ -65,19 +60,17 @@ fun IntegrityScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             when (val s = state) {
-                is IntegrityUiState.Idle    -> IntegrityIdleView(vm)
-                is IntegrityUiState.Loading -> IntegrityLoadingView()
-                is IntegrityUiState.Done    -> IntegrityResultView(s.result, vm)
-                is IntegrityUiState.Error   -> IntegrityErrorView(s.message, vm)
+                is IntegrityUiState.Idle    -> IdleView(vm)
+                is IntegrityUiState.Loading -> LoadingView()
+                is IntegrityUiState.Done    -> ResultView(s, vm)
             }
         }
     }
 }
 
-// ── Boşta görünüm ────────────────────────────────────────────────
+// ── Boşta ────────────────────────────────────────────────────────
 @Composable
-private fun IntegrityIdleView(vm: IntegrityViewModel) {
-    // Açıklama kartı
+private fun IdleView(vm: IntegrityViewModel) {
     Card(
         shape  = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(MaterialTheme.colorScheme.surfaceVariant)
@@ -86,64 +79,59 @@ private fun IntegrityIdleView(vm: IntegrityViewModel) {
             Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Başlık
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
-                    Modifier.size(48.dp)
-                        .clip(CircleShape)
+                    Modifier.size(48.dp).clip(CircleShape)
                         .background(GuardXColors.Primary.copy(.15f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.Shield, null,
+                    Icon(Icons.Default.Security, null,
                         Modifier.size(26.dp), tint = GuardXColors.Primary)
                 }
                 Column {
-                    Text("Google Play Integrity",
+                    Text("İki Katmanlı Doğrulama",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold)
-                    Text("Google sunucularından cihaz doğrulaması",
+                    Text("TEE + Google Play Integrity",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(.55f))
+                        color = MaterialTheme.colorScheme.onSurface.copy(.5f))
                 }
             }
 
             Divider(color = MaterialTheme.colorScheme.outline.copy(.15f))
 
-            // Doğrulama katmanları
-            listOf(
-                Icons.Default.PhoneAndroid  to "Cihaz bütünlüğü — Bootloader ve donanım",
-                Icons.Default.Apps          to "Uygulama tanıma — İmza ve Play Store kaydı",
-                Icons.Default.AccountCircle to "Lisans doğrulama — Play hesabı kontrolü",
-                Icons.Default.Cloud         to "Google sunucusu imzalı — manipüle edilemez"
-            ).forEach { (icon, text) ->
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(icon, null, Modifier.size(18.dp), tint = GuardXColors.Primary)
-                    Text(text, style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(.75f))
-                }
-            }
+            // TEE katmanı
+            LayerRow(
+                icon   = Icons.Default.Hardware,
+                color  = GuardXColors.Primary,
+                title  = "TEE Donanım Kanıtlaması (Birincil)",
+                detail = "AndroidKeyStore üzerinden çevrimdışı — API anahtarı gerekmez"
+            )
+            LayerRow(
+                icon   = Icons.Default.Cloud,
+                color  = GuardXColors.Secondary,
+                title  = "Play Integrity (İkincil)",
+                detail = "Google sunucuları üzerinden — internet gerektirir"
+            )
 
-            // Uyarı notu
+            // Uyarı
             Surface(
                 shape  = RoundedCornerShape(10.dp),
-                color  = GuardXColors.Warning.copy(.08f),
-                border = BorderStroke(1.dp, GuardXColors.Warning.copy(.25f))
+                color  = GuardXColors.Primary.copy(.07f),
+                border = BorderStroke(1.dp, GuardXColors.Primary.copy(.2f))
             ) {
                 Row(
                     Modifier.padding(12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.Info, null,
-                        Modifier.size(16.dp), tint = GuardXColors.Warning)
+                    Icon(Icons.Default.Bolt, null,
+                        Modifier.size(16.dp), tint = GuardXColors.Primary)
                     Text(
-                        "Bu doğrulama internet bağlantısı gerektirir ve Google Play " +
-                        "hizmetleri kurulu olmalıdır.",
+                        "TEE kanıtlaması her zaman çalışır. " +
+                        "Play Integrity internet bağlantısı olmadan hata verebilir.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(.65f),
                         lineHeight = 18.sp
@@ -151,95 +139,56 @@ private fun IntegrityIdleView(vm: IntegrityViewModel) {
                 }
             }
 
-            // Buton
             Button(
-                onClick  = { vm.requestVerdict() },
+                onClick  = { vm.startVerification() },
                 modifier = Modifier.fillMaxWidth(),
                 shape    = RoundedCornerShape(50)
             ) {
-                Icon(Icons.Default.Verified, null, Modifier.size(18.dp))
+                Icon(Icons.Default.Shield, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Doğrulama Başlat")
+                Text("Doğrulamayı Başlat")
             }
         }
     }
 }
 
-// ── Yükleniyor görünümü ──────────────────────────────────────────
+// ── Yükleniyor ───────────────────────────────────────────────────
 @Composable
-private fun IntegrityLoadingView() {
+private fun LoadingView() {
     Column(
-        Modifier.fillMaxWidth().padding(vertical = 32.dp),
+        Modifier.fillMaxWidth().padding(vertical = 40.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         ScanPulse(true, Modifier.size(130.dp))
-
-        Text("Google Sunucularıyla İletişim",
+        Text("Doğrulanıyor…",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold)
-
-        Text("Cihaz bütünlüğü doğrulanıyor…",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(.5f))
-
         LinearProgressIndicator(
-            modifier = Modifier.fillMaxWidth().height(4.dp),
-            trackColor = MaterialTheme.colorScheme.outline.copy(.2f)
+            modifier    = Modifier.fillMaxWidth().height(4.dp),
+            trackColor  = MaterialTheme.colorScheme.outline.copy(.2f)
         )
+        Text("TEE → Play Integrity sırayla çalışıyor",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(.45f))
     }
 }
 
-// ── Hata görünümü ────────────────────────────────────────────────
+// ── Sonuç ────────────────────────────────────────────────────────
 @Composable
-private fun IntegrityErrorView(message: String, vm: IntegrityViewModel) {
-    Column(
-        Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Spacer(Modifier.height(16.dp))
-        Box(
-            Modifier.size(72.dp).clip(CircleShape)
-                .background(GuardXColors.Warning.copy(.15f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Default.CloudOff, null,
-                Modifier.size(36.dp), tint = GuardXColors.Warning)
-        }
-        Text("Doğrulama Başarısız",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold)
-        Text(message,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(.6f),
-            textAlign = TextAlign.Center)
-        Button(onClick = { vm.requestVerdict() }, shape = RoundedCornerShape(50)) {
-            Icon(Icons.Default.Refresh, null, Modifier.size(16.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Tekrar Dene")
-        }
-        OutlinedButton(onClick = { vm.reset() }, shape = RoundedCornerShape(50)) {
-            Text("Vazgeç")
-        }
-    }
-}
+private fun ResultView(state: IntegrityUiState.Done, vm: IntegrityViewModel) {
 
-// ── Sonuç görünümü ───────────────────────────────────────────────
-@Composable
-private fun IntegrityResultView(result: IntegrityResult.Success, vm: IntegrityViewModel) {
-    val v = result.verdict
-
-    // ── Ana skor kartı ───────────────────────────────────────────
+    // ── Birleşik skor kartı ───────────────────────────────────────
+    val combinedScore = state.combinedScore
     val scoreColor = when {
-        v.trustScore >= 80 -> GuardXColors.Safe
-        v.trustScore >= 50 -> GuardXColors.Warning
-        else               -> GuardXColors.Danger
+        combinedScore >= 80 -> GuardXColors.Safe
+        combinedScore >= 50 -> GuardXColors.Warning
+        else                -> GuardXColors.Danger
     }
     val scoreIcon = when {
-        v.trustScore >= 80 -> Icons.Default.VerifiedUser
-        v.trustScore >= 50 -> Icons.Default.GppMaybe
-        else               -> Icons.Default.GppBad
+        combinedScore >= 80 -> Icons.Default.VerifiedUser
+        combinedScore >= 50 -> Icons.Default.GppMaybe
+        else                -> Icons.Default.GppBad
     }
 
     Card(
@@ -250,136 +199,223 @@ private fun IntegrityResultView(result: IntegrityResult.Success, vm: IntegrityVi
         Column(
             Modifier.fillMaxWidth().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Box(
-                Modifier.size(72.dp).clip(CircleShape)
+                Modifier.size(70.dp).clip(CircleShape)
                     .background(scoreColor.copy(.15f)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(scoreIcon, null, Modifier.size(38.dp), tint = scoreColor)
+                Icon(scoreIcon, null, Modifier.size(36.dp), tint = scoreColor)
             }
-
-            Text("Güven Skoru: ${v.trustScore}/100",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold, color = scoreColor)
-
-            // Özet mesajı
+            Text(
+                "Güven Skoru: $combinedScore / 100",
+                style      = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color      = scoreColor
+            )
             Text(
                 when {
-                    v.trustScore >= 90 -> "Cihaz ve uygulama tam doğrulandı"
-                    v.trustScore >= 70 -> "Cihaz güvenilir, bazı kontroller geçemedi"
-                    v.trustScore >= 40 -> "Kısmi güvence — dikkatli olun"
-                    else               -> "Cihaz doğrulaması başarısız"
+                    combinedScore >= 90 -> "Cihaz doğrulandı — yüksek güvence"
+                    combinedScore >= 70 -> "Cihaz büyük ölçüde güvenli"
+                    combinedScore >= 40 -> "Bazı kontroller başarısız — dikkat"
+                    else                -> "Cihaz güvensiz veya değiştirilmiş"
                 },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(.65f),
+                style     = MaterialTheme.typography.bodyMedium,
+                color     = MaterialTheme.colorScheme.onSurface.copy(.6f),
                 textAlign = TextAlign.Center
             )
         }
     }
 
-    // ── Cihaz bütünlüğü ─────────────────────────────────────────
-    SectionCard(title = "Cihaz Bütünlüğü", icon = Icons.Default.PhoneAndroid) {
-        IntegrityRow(
-            label   = "Cihaz Bütünlüğü",
-            passed  = v.meetsDeviceIntegrity,
-            detail  = if (v.meetsDeviceIntegrity)
-                "Gerçek Android donanımı, TrustZone aktif"
-            else
-                "Emülatör, rootlu cihaz veya değiştirilmiş sistem"
-        )
-        IntegrityRow(
-            label   = "Güçlü Donanım Kanıtı",
-            passed  = v.meetsStrongIntegrity,
-            detail  = if (v.meetsStrongIntegrity)
-                "Play Protect sertifikalı, donanım destekli doğrulama"
-            else
-                "Donanım destekli kanıt yok (eski cihaz veya rootlu)"
-        )
-        if (v.meetsVirtualIntegrity) {
-            IntegrityRow(
-                label  = "Sanal Ortam",
-                passed = false,
-                detail = "Emülatör veya CI ortamı tespit edildi"
-            )
+    // ── TEE Kanıtlama Bölümü ─────────────────────────────────────
+    SectionCard(
+        title = "TEE Donanım Kanıtlaması",
+        icon  = Icons.Default.Hardware,
+        badge = when (state.teeResult) {
+            is TeeAttestationManager.TeeResult.Success ->
+                if (state.teeResult.data.isHardwareBacked) "DONANIM" to GuardXColors.Safe
+                else "YAZILIM" to GuardXColors.Warning
+            is TeeAttestationManager.TeeResult.Error -> "HATA" to GuardXColors.Danger
         }
+    ) {
+        when (val tee = state.teeResult) {
+            is TeeAttestationManager.TeeResult.Success -> {
+                val d = tee.data
 
-        // Cihaz label'larını göster
-        if (v.deviceLabels.isNotEmpty()) {
-            Spacer(Modifier.height(4.dp))
-            Text("Cihaz Etiketleri:",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(.5f))
-            v.deviceLabels.forEach { label ->
-                val (labelColor, labelText) = when (label) {
-                    "MEETS_STRONG_INTEGRITY"  -> GuardXColors.Safe    to "✓ STRONG"
-                    "MEETS_DEVICE_INTEGRITY"  -> GuardXColors.Safe    to "✓ DEVICE"
-                    "MEETS_VIRTUAL_INTEGRITY" -> GuardXColors.Warning to "⚠ VIRTUAL"
-                    else                      -> GuardXColors.Warning to label
+                CheckRow(
+                    label  = "Donanım Desteği",
+                    passed = d.isHardwareBacked,
+                    detail = if (d.isHardwareBacked)
+                        "Anahtar TEE/StrongBox içinde oluşturuldu"
+                    else
+                        "Anahtar yazılımda oluşturuldu (donanım desteği yok)"
+                )
+                CheckRow(
+                    label  = "Güvenlik Seviyesi",
+                    passed = d.securityLevel != TeeAttestationManager.SecurityLevel.SOFTWARE,
+                    detail = d.securityLevel.label
+                )
+                CheckRow(
+                    label  = "Doğrulanmış Önyükleme",
+                    passed = d.verifiedBootState.isClean,
+                    detail = d.verifiedBootState.label
+                )
+                CheckRow(
+                    label  = "Bootloader",
+                    passed = d.deviceLocked,
+                    detail = if (d.deviceLocked)
+                        "Kilitli ✓ (kaynak: ${d.bootStateSource})"
+                    else
+                        "AÇIK — değiştirilebilir sistem (kaynak: ${d.bootStateSource})"
+                )
+                if (d.certChainLength > 0) {
+                    CheckRow(
+                        label  = "Sertifika Zinciri",
+                        passed = d.certChainLength >= 3,
+                        detail = "${d.certChainLength} sertifika (Google CA'ya kadar)"
+                    )
                 }
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = labelColor.copy(.12f)
+                CheckRow(
+                    label  = "Nonce Doğrulama",
+                    passed = d.challengeVerified,
+                    detail = if (d.challengeVerified)
+                        "Challenge eşleşti — tekrar saldırısı yok"
+                    else
+                        "Challenge eşleşmedi"
+                )
+            }
+            is TeeAttestationManager.TeeResult.Error -> {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(labelText,
-                        Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = labelColor)
+                    Icon(Icons.Default.ErrorOutline, null,
+                        Modifier.size(16.dp), tint = GuardXColors.Warning)
+                    Text(
+                        tee.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(.6f)
+                    )
                 }
             }
         }
     }
 
-    // ── Uygulama bütünlüğü ───────────────────────────────────────
-    SectionCard(title = "Uygulama Bütünlüğü", icon = Icons.Default.Apps) {
-        IntegrityRow(
-            label  = "Play Store Tanıma",
-            passed = v.appRecognized,
-            detail = when {
-                v.appRecognized    -> "Orijinal Play Store imzası — değiştirilmemiş"
-                v.appUnrecognized  -> "Bilinmeyen sürüm veya değiştirilmiş APK"
-                else               -> "Play Store'da kayıtsız"
+    // ── Play Integrity Bölümü ─────────────────────────────────────
+    SectionCard(
+        title = "Google Play Integrity",
+        icon  = Icons.Default.Cloud,
+        badge = when (val pi = state.playIntegrity) {
+            null -> "ATLAYI" to MaterialTheme.colorScheme.outline
+            is PlayIntegrityManager.IntegrityResult.Success ->
+                if (pi.verdict.meetsDeviceIntegrity) "GEÇTI" to GuardXColors.Safe
+                else "BAŞARISIZ" to GuardXColors.Danger
+            is PlayIntegrityManager.IntegrityResult.Error -> "HATA" to GuardXColors.Warning
+        }
+    ) {
+        when (val pi = state.playIntegrity) {
+            null -> {
+                Text(
+                    "Play Integrity bu çalışmada atlandı.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(.5f)
+                )
             }
-        )
-        if (v.appPackageName.isNotEmpty()) {
-            LabelValue("Paket", v.appPackageName)
-        }
-        if (v.versionCode > 0) {
-            LabelValue("Sürüm Kodu", v.versionCode.toString())
-        }
-        if (v.certDigests.isNotEmpty()) {
-            LabelValue("İmza (SHA-256)", v.certDigests.first().take(16) + "…")
-        }
-    }
-
-    // ── Lisans ──────────────────────────────────────────────────
-    if (v.licensingVerdict.isNotEmpty() && v.licensingVerdict != "UNEVALUATED") {
-        SectionCard(title = "Lisans Durumu", icon = Icons.Default.CardMembership) {
-            val (licPassed, licDetail) = when (v.licensingVerdict) {
-                "LICENSED"   -> true  to "Play Store üzerinden yasal olarak yüklendi"
-                "UNLICENSED" -> false to "Lisanssız kurulum tespit edildi"
-                else         -> false to "Lisans değerlendirilemedi"
+            is PlayIntegrityManager.IntegrityResult.Success -> {
+                val v = pi.verdict
+                CheckRow(
+                    label  = "Cihaz Bütünlüğü",
+                    passed = v.meetsDeviceIntegrity,
+                    detail = if (v.meetsDeviceIntegrity)
+                        "Gerçek Android donanımı, TrustZone aktif"
+                    else
+                        "Emülatör, rootlu veya değiştirilmiş sistem"
+                )
+                CheckRow(
+                    label  = "Güçlü Donanım Kanıtı",
+                    passed = v.meetsStrongIntegrity,
+                    detail = if (v.meetsStrongIntegrity)
+                        "Play Protect sertifikalı cihaz"
+                    else
+                        "Güçlü donanım kanıtı yok"
+                )
+                CheckRow(
+                    label  = "Uygulama Tanıma",
+                    passed = v.appRecognized,
+                    detail = if (v.appRecognized)
+                        "Play Store kayıtlı, orijinal imza"
+                    else
+                        "Bilinmeyen sürüm veya değiştirilmiş APK"
+                )
+                if (v.meetsVirtualIntegrity) {
+                    CheckRow(
+                        label  = "Sanal Ortam",
+                        passed = false,
+                        detail = "Emülatör veya CI ortamı tespit edildi"
+                    )
+                }
+                if (v.licensingVerdict != "UNEVALUATED") {
+                    CheckRow(
+                        label  = "Lisans",
+                        passed = v.licensingVerdict == "LICENSED",
+                        detail = when (v.licensingVerdict) {
+                            "LICENSED"   -> "Play Store üzerinden yasal kurulum"
+                            "UNLICENSED" -> "Lisanssız kurulum"
+                            else         -> v.licensingVerdict
+                        }
+                    )
+                }
+                // Verdict label'ları
+                if (v.deviceLabels.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        v.deviceLabels.forEach { label ->
+                            val (col, txt) = when (label) {
+                                "MEETS_STRONG_INTEGRITY"  -> GuardXColors.Safe    to "STRONG"
+                                "MEETS_DEVICE_INTEGRITY"  -> GuardXColors.Safe    to "DEVICE"
+                                "MEETS_VIRTUAL_INTEGRITY" -> GuardXColors.Warning to "VIRTUAL"
+                                else                      -> GuardXColors.Warning to label.take(10)
+                            }
+                            Surface(shape = RoundedCornerShape(4.dp), color = col.copy(.12f)) {
+                                Text(txt,
+                                    Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = col)
+                            }
+                        }
+                    }
+                }
             }
-            IntegrityRow(
-                label  = "Lisans",
-                passed = licPassed,
-                detail = licDetail
-            )
+            is PlayIntegrityManager.IntegrityResult.Error -> {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.WifiOff, null,
+                        Modifier.size(16.dp), tint = GuardXColors.Warning)
+                    Text(
+                        pi.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(.6f)
+                    )
+                }
+                Text(
+                    "TEE kanıtlaması başarıyla tamamlandı. " +
+                    "Play Integrity sonuçsuz kalsa da TEE sonucu güvenilirdir.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(.45f),
+                    lineHeight = 17.sp
+                )
+            }
         }
     }
 
-    // ── Ham verdict label'ları ───────────────────────────────────
-    if (v.environmentVerdict.isNotEmpty()) {
-        SectionCard(title = "Ortam", icon = Icons.Default.Dns) {
-            LabelValue("Ortam Durumu", v.environmentVerdict)
-        }
-    }
-
-    // ── Butonlar ─────────────────────────────────────────────────
+    // ── Yeniden tara ────────────────────────────────────────────
     OutlinedButton(
-        onClick  = { vm.requestVerdict() },
+        onClick  = { vm.startVerification() },
         modifier = Modifier.fillMaxWidth(),
         shape    = RoundedCornerShape(50)
     ) {
@@ -389,12 +425,29 @@ private fun IntegrityResultView(result: IntegrityResult.Success, vm: IntegrityVi
     }
 }
 
-// ── Yardımcı composable'lar ──────────────────────────────────────
+// ── Yardımcı Composable'lar ──────────────────────────────────────
+@Composable
+private fun LayerRow(icon: ImageVector, color: Color, title: String, detail: String) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment     = Alignment.Top
+    ) {
+        Icon(icon, null, Modifier.size(18.dp).padding(top = 2.dp), tint = color)
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium)
+            Text(detail, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(.5f))
+        }
+    }
+}
+
 @Composable
 private fun SectionCard(
-    title:   String,
-    icon:    ImageVector,
-    content: @Composable ColumnScope.() -> Unit
+    title   : String,
+    icon    : ImageVector,
+    badge   : Pair<String, Color>,
+    content : @Composable ColumnScope.() -> Unit
 ) {
     Card(
         shape  = RoundedCornerShape(16.dp),
@@ -402,12 +455,30 @@ private fun SectionCard(
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment     = Alignment.CenterVertically
             ) {
-                Icon(icon, null, Modifier.size(18.dp), tint = GuardXColors.Primary)
-                Text(title, style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment     = Alignment.CenterVertically
+                ) {
+                    Icon(icon, null, Modifier.size(18.dp), tint = GuardXColors.Primary)
+                    Text(title, style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold)
+                }
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = badge.second.copy(.15f)
+                ) {
+                    Text(
+                        badge.first,
+                        Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = badge.second
+                    )
+                }
             }
             Divider(color = MaterialTheme.colorScheme.outline.copy(.12f))
             content()
@@ -416,36 +487,21 @@ private fun SectionCard(
 }
 
 @Composable
-private fun IntegrityRow(label: String, passed: Boolean, detail: String) {
+private fun CheckRow(label: String, passed: Boolean, detail: String) {
     val color = if (passed) GuardXColors.Safe else GuardXColors.Danger
     val icon  = if (passed) Icons.Default.CheckCircle else Icons.Default.Cancel
-
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment     = Alignment.Top
     ) {
-        Icon(icon, null, Modifier.size(18.dp).padding(top = 2.dp), tint = color)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Icon(icon, null, Modifier.size(16.dp).padding(top = 2.dp), tint = color)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text(label, style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium)
             Text(detail, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(.55f),
-                lineHeight = 17.sp)
+                color = MaterialTheme.colorScheme.onSurface.copy(.5f),
+                lineHeight = 16.sp)
         }
-    }
-}
-
-@Composable
-private fun LabelValue(label: String, value: String) {
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(label, style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(.5f))
-        Text(value, style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface.copy(.85f))
     }
 }

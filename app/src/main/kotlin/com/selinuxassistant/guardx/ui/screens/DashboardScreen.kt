@@ -16,7 +16,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.selinuxassistant.guardx.model.RootReport
-import com.selinuxassistant.guardx.service.SecurityState
 import com.selinuxassistant.guardx.ui.components.*
 import com.selinuxassistant.guardx.ui.theme.GuardXColors
 
@@ -27,7 +26,14 @@ fun DashboardScreen(
 ) {
     val rootReport by vm.rootReport.collectAsState()
     val isChecking by vm.isChecking.collectAsState()
-    val securityScore by vm.securityScore.collectAsState()
+
+    val securityScore = remember(rootReport) {
+        rootReport?.let { r ->
+            when (r.riskLevel) {
+                0 -> 95; 1 -> 72; 2 -> 48; 3 -> 22; else -> 5
+            }
+        } ?: 0
+    }
 
     Column(
         Modifier
@@ -71,17 +77,16 @@ fun DashboardScreen(
                 } else {
                     SecurityGauge(securityScore)
                     rootReport?.let { r ->
-                        val riskColor = Color(android.graphics.Color.parseColor(r.riskColorHex))
                         Surface(
                             shape = RoundedCornerShape(50),
-                            color = riskColor.copy(.15f)
+                            color = Color(android.graphics.Color.parseColor(r.riskColorHex)).copy(.15f)
                         ) {
                             Text(
                                 r.riskLabel,
                                 Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = riskColor
+                                color = Color(android.graphics.Color.parseColor(r.riskColorHex))
                             )
                         }
                     }
@@ -100,31 +105,30 @@ fun DashboardScreen(
         }
 
         // Durum kartları
-        val lastApks by SecurityState.lastApkReports.collectAsState()
-        val malwareCount = lastApks.count { it.verdict == "MALWARE" }
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            StatCard(
-                title = "Root",
-                value = rootReport?.let { if (it.isRooted) "Tespit!" else "Temiz" } ?: "–",
-                icon  = Icons.Default.Security,
-                color = if (rootReport?.isRooted == true) GuardXColors.Danger else GuardXColors.Safe,
-                modifier = Modifier.weight(1f)
-            )
-            StatCard(
-                title = "Virüs",
-                value = if (malwareCount > 0) "$malwareCount Tespit" else if (lastApks.isNotEmpty()) "Temiz" else "–",
-                icon  = Icons.Default.BugReport,
-                color = if (malwareCount > 0) GuardXColors.Critical else GuardXColors.Safe,
-                modifier = Modifier.weight(1f)
-            )
-            StatCard(
-                title = "Sistem",
-                value = rootReport?.let { if (it.bootloaderUnlocked) "Açık" else "Kilitli" } ?: "–",
-                icon  = Icons.Default.Lock,
-                color = if (rootReport?.bootloaderUnlocked == true) GuardXColors.Warning else GuardXColors.Safe,
-                modifier = Modifier.weight(1f)
-            )
+        rootReport?.let { r ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                StatCard(
+                    title = "Root",
+                    value = if (r.isRooted) "Tespit!" else "Temiz",
+                    icon  = Icons.Default.Security,
+                    color = if (r.isRooted) GuardXColors.Danger else GuardXColors.Safe,
+                    modifier = Modifier.weight(1f)
+                )
+                StatCard(
+                    title = "Hook",
+                    value = if (r.isHooked) "Tespit!" else "Temiz",
+                    icon  = Icons.Default.BugReport,
+                    color = if (r.isHooked) GuardXColors.Critical else GuardXColors.Safe,
+                    modifier = Modifier.weight(1f)
+                )
+                StatCard(
+                    title = "Bootloader",
+                    value = if (r.bootloaderUnlocked) "Açık" else "Kilitli",
+                    icon  = Icons.Default.Lock,
+                    color = if (r.bootloaderUnlocked) GuardXColors.Warning else GuardXColors.Safe,
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
 
         // Hızlı Eylemler
@@ -162,9 +166,9 @@ fun DashboardScreen(
             )
             QuickActionCard(
                 icon   = Icons.Default.VerifiedUser,
-                title  = "Play Integrity",
-                sub    = "Google sunucusu doğrulaması",
-                color  = GuardXColors.Safe,
+                title  = "Cihaz Doğrulama",
+                sub    = "TEE + Play Integrity",
+                color  = GuardXColors.Primary,
                 onClick= { onNavigate("integrity") }
             )
         }

@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <sys/stat.h>
 #include <android/log.h>
+#include <memory>
 
 #define LOG_TAG "GX_DB"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
@@ -28,6 +29,16 @@ static constexpr char   MAGIC[]   = "GXSIG001";
 static constexpr size_t MAGIC_LEN = 8;
 
 namespace AntiVirus {
+
+static std::unique_ptr<LocalDB> g_globalDB = nullptr;
+
+LocalDB* LocalDB::getGlobalInstance() {
+    return g_globalDB.get();
+}
+
+void LocalDB::setGlobalInstance(std::unique_ptr<LocalDB> db) {
+    g_globalDB = std::move(db);
+}
 
 LocalDB::LocalDB(const std::string& dbPath) : m_dbPath(dbPath) {}
 

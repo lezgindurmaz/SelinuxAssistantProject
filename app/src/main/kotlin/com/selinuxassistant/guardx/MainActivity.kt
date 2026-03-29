@@ -3,7 +3,6 @@ package com.selinuxassistant.guardx
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-// import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.compose.NavHost
@@ -16,7 +15,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        // enableEdgeToEdge()
         setContent {
             GuardXTheme {
                 GuardXNavHost()
@@ -51,12 +49,12 @@ fun GuardXNavHost() {
             BehaviorScreen(onBack = { nav.popBackStack() })
         }
 
-        composable("settings") {
-            SettingsScreen(onBack = { nav.popBackStack() })
-        }
-
         composable("integrity") {
             IntegrityScreen(onBack = { nav.popBackStack() })
+        }
+
+        composable("settings") {
+            SettingsScreen(onBack = { nav.popBackStack() })
         }
     }
 }

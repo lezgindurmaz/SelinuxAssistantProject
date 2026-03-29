@@ -117,16 +117,14 @@ private fun RootIdleView(vm: RootCheckViewModel) {
         Card(shape = RoundedCornerShape(16.dp),
              colors = CardDefaults.cardColors(MaterialTheme.colorScheme.surfaceVariant)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("17 Tespit Katmanı", style = MaterialTheme.typography.titleMedium,
+                Text("15 Tespit Katmanı", style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold)
                 listOf(
                     Icons.Default.Memory      to "Build props, SELinux, Kernel integrity",
                     Icons.Default.Code        to "Su binary, root packages, mount points",
                     Icons.Default.Shield      to "Frida, Xposed, Magisk/Zygisk hook tespiti",
-                    Icons.Default.Psychology  to "ptrace, debugger ve timing tespiti",
-                    Icons.Default.Storage     to "Bootloader: 5 bağımsız kaynak",
-                    Icons.Default.BugReport   to "Zygote bütünlük analizi (YENİ)",
-                    Icons.Default.ManageSearch to "GOT/PLT/Dobby derin hook analizi (YENİ)"
+                    Icons.Default.Psychology  to "ptrace, ptrace timing, debugger tespiti",
+                    Icons.Default.Storage     to "Bootloader: 5 bağımsız kaynak"
                 ).forEach { (icon, text) ->
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically) {
@@ -153,7 +151,7 @@ private fun RootScanningView() {
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold)
         LinearProgressIndicator(Modifier.fillMaxWidth().height(6.dp))
-        Text("17 tespit katmanı çalışıyor",
+        Text("15 tespit katmanı çalışıyor",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(.5f))
     }

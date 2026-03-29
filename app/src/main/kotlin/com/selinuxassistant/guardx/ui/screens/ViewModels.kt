@@ -9,13 +9,7 @@ import com.selinuxassistant.guardx.service.ScanRepository
 import com.selinuxassistant.guardx.service.SecurityState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import com.selinuxassistant.guardx.model.RootReport
-import com.selinuxassistant.guardx.model.ApkReport
-import com.selinuxassistant.guardx.model.BehaviorReport
 
-// ══════════════════════════════════════════════════════════════════
-//  Dashboard ViewModel
-// ══════════════════════════════════════════════════════════════════
 class DashboardViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = (app as GuardXApp).repository
 
@@ -45,9 +39,8 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
             combine(
                 SecurityState.rootReport,
                 SecurityState.lastApkReports,
-                SecurityState.lastBehaviorReport,
-                SecurityState.integrityVerdict
-            ) { _: RootReport?, _: List<ApkReport>, _: BehaviorReport?, _: com.selinuxassistant.guardx.service.IntegrityVerdict? ->
+                SecurityState.lastBehaviorReport
+            ) { _, _, _ ->
                 SecurityState.calculateOverallScore()
             }.collect { score ->
                 securityScore.value = score
@@ -56,9 +49,6 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
     }
 }
 
-// ══════════════════════════════════════════════════════════════════
-//  File Scan ViewModel
-// ══════════════════════════════════════════════════════════════════
 sealed class ScanUiState {
     object Idle : ScanUiState()
     data class Scanning(val scanned: Int, val total: Int, val current: String) : ScanUiState()
@@ -91,9 +81,6 @@ class FileScanViewModel(app: Application) : AndroidViewModel(app) {
     fun reset()  { _state.value = ScanUiState.Idle }
 }
 
-// ══════════════════════════════════════════════════════════════════
-//  APK Scan ViewModel
-// ══════════════════════════════════════════════════════════════════
 sealed class ApkScanState {
     object Idle : ApkScanState()
     data class Scanning(val pkg: String, val done: Int, val total: Int) : ApkScanState()
@@ -107,13 +94,6 @@ class ApkScanViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _state = MutableStateFlow<ApkScanState>(ApkScanState.Idle)
     val state: StateFlow<ApkScanState> = _state
-
-    init {
-        val existing = SecurityState.lastApkReports.value
-        if (existing.isNotEmpty()) {
-            _state.value = ApkScanState.Done(existing)
-        }
-    }
 
     fun scanAllApps() {
         viewModelScope.launch {
@@ -142,9 +122,6 @@ class ApkScanViewModel(app: Application) : AndroidViewModel(app) {
     fun reset() { _state.value = ApkScanState.Idle }
 }
 
-// ══════════════════════════════════════════════════════════════════
-//  Root Check ViewModel
-// ══════════════════════════════════════════════════════════════════
 sealed class RootCheckState {
     object Idle : RootCheckState()
     object Scanning : RootCheckState()
@@ -157,12 +134,6 @@ class RootCheckViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _state = MutableStateFlow<RootCheckState>(RootCheckState.Idle)
     val state: StateFlow<RootCheckState> = _state
-
-    init {
-        SecurityState.rootReport.value?.let {
-            _state.value = RootCheckState.Done(it)
-        }
-    }
 
     fun quickScan() { scan(deep = false) }
     fun deepScan()  { scan(deep = true)  }
@@ -180,9 +151,6 @@ class RootCheckViewModel(app: Application) : AndroidViewModel(app) {
     }
 }
 
-// ══════════════════════════════════════════════════════════════════
-//  Behavior Monitor ViewModel
-// ══════════════════════════════════════════════════════════════════
 sealed class BehaviorState {
     object Idle : BehaviorState()
     data class Scanning(val elapsed: Int, val duration: Int) : BehaviorState()
@@ -196,19 +164,10 @@ class BehaviorViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow<BehaviorState>(BehaviorState.Idle)
     val state: StateFlow<BehaviorState> = _state
 
-    init {
-        SecurityState.lastBehaviorReport.value?.let {
-            _state.value = BehaviorState.Done(it)
-        }
-    }
-
     fun startScan(durationMs: Int = 5000) {
         viewModelScope.launch {
             _state.value = BehaviorState.Scanning(0, durationMs)
-
             val startTime = System.currentTimeMillis()
-
-            // We use supervisorScope to ensure ticker and repo scan are independent but manageable
             supervisorScope {
                 val ticker = launch {
                     while (isActive) {
@@ -218,19 +177,12 @@ class BehaviorViewModel(app: Application) : AndroidViewModel(app) {
                             break
                         }
                         _state.value = BehaviorState.Scanning(elapsed, durationMs)
-                        delay(250) // Reduce update frequency for stability
+                        delay(250)
                     }
                 }
-
-                val result = runCatching {
-                    // Native call is blocking, it should respect durationMs internally
-                    repo.scanProcesses(durationMs)
-                }
-
+                val result = runCatching { repo.scanProcesses(durationMs) }
                 ticker.cancel()
-
                 result.onSuccess {
-                    // Ensure the final state reflects the full duration
                     _state.value = BehaviorState.Scanning(durationMs, durationMs)
                     delay(100)
                     SecurityState.updateBehavior(it)
@@ -245,28 +197,21 @@ class BehaviorViewModel(app: Application) : AndroidViewModel(app) {
     fun reset() { _state.value = BehaviorState.Idle }
 }
 
-// ── Settings ViewModel ──────────────────────────────────────────────────────
-class SettingsViewModel(application: android.app.Application) :
-    AndroidViewModel(application) {
-
+class SettingsViewModel(application: Application) : AndroidViewModel(application) {
     private val _sigCount = MutableStateFlow(0L)
     val sigCount: StateFlow<Long> = _sigCount.asStateFlow()
-
     private val _dbVersion = MutableStateFlow("–")
     val dbVersion: StateFlow<String> = _dbVersion.asStateFlow()
-
     private val _isUpdating = MutableStateFlow(false)
     val isUpdating: StateFlow<Boolean> = _isUpdating.asStateFlow()
 
     init { refreshDbStats() }
-
     fun refreshDbStats() {
         viewModelScope.launch(Dispatchers.IO) {
             _sigCount.value  = NativeEngine.dbGetCount()
             _dbVersion.value = NativeEngine.dbGetVersion()
         }
     }
-
     fun applyDelta(deltaPath: String) {
         viewModelScope.launch(Dispatchers.IO) {
             _isUpdating.value = true
@@ -280,43 +225,50 @@ class SettingsViewModel(application: android.app.Application) :
     }
 }
 
-// ══════════════════════════════════════════════════════════════════
-//  Play Integrity ViewModel
-// ══════════════════════════════════════════════════════════════════
-sealed class IntegrityUiState {
-    object Idle    : IntegrityUiState()
-    object Loading : IntegrityUiState()
-    data class Done (val result:  com.selinuxassistant.guardx.service.IntegrityResult.Success) : IntegrityUiState()
-    data class Error(val message: String) : IntegrityUiState()
-}
-
-class IntegrityViewModel(app: Application) : AndroidViewModel(app) {
-
-    private val _state = MutableStateFlow<IntegrityUiState>(IntegrityUiState.Idle)
-    val state: StateFlow<IntegrityUiState> = _state.asStateFlow()
-
-    init {
-        SecurityState.integrityVerdict.value?.let {
-            _state.value = IntegrityUiState.Done(com.selinuxassistant.guardx.service.IntegrityResult.Success(it))
-        }
-    }
-
-    private val manager =
-        com.selinuxassistant.guardx.service.PlayIntegrityManager(app.applicationContext)
-
-    fun requestVerdict() {
-        viewModelScope.launch {
-            _state.value = IntegrityUiState.Loading
-            when (val result = manager.requestIntegrityVerdict()) {
-                is com.selinuxassistant.guardx.service.IntegrityResult.Success -> {
-                    SecurityState.updateIntegrity(result.verdict)
-                    _state.value = IntegrityUiState.Done(result)
-                }
-                is com.selinuxassistant.guardx.service.IntegrityResult.Error   ->
-                    _state.value = IntegrityUiState.Error(result.message)
+sealed interface IntegrityUiState {
+    object Idle    : IntegrityUiState
+    object Loading : IntegrityUiState
+    data class Done(
+        val teeResult     : com.selinuxassistant.guardx.service.TeeAttestationManager.TeeResult,
+        val playIntegrity : com.selinuxassistant.guardx.service.PlayIntegrityManager.IntegrityResult?
+    ) : IntegrityUiState {
+        val combinedScore: Int get() {
+            val teeScore = when (teeResult) {
+                is com.selinuxassistant.guardx.service.TeeAttestationManager.TeeResult.Success ->
+                    teeResult.data.trustScore
+                else -> 0
+            }
+            val piScore = when (playIntegrity) {
+                is com.selinuxassistant.guardx.service.PlayIntegrityManager.IntegrityResult.Success ->
+                    playIntegrity.verdict.integrityScore
+                else -> null
+            }
+            return if (piScore != null) {
+                ((teeScore * 0.6) + (piScore * 0.4)).toInt().coerceIn(0, 100)
+            } else {
+                teeScore
             }
         }
     }
+}
 
+class IntegrityViewModel(app: Application) : AndroidViewModel(app) {
+    private val _state = MutableStateFlow<IntegrityUiState>(IntegrityUiState.Idle)
+    val state: StateFlow<IntegrityUiState> = _state.asStateFlow()
+    private val teeManager = com.selinuxassistant.guardx.service.TeeAttestationManager(app)
+    private val playManager = com.selinuxassistant.guardx.service.PlayIntegrityManager(app)
+
+    fun startVerification() {
+        viewModelScope.launch {
+            _state.value = IntegrityUiState.Loading
+            val teeResult = teeManager.performAttestation()
+            val piResult = runCatching { playManager.requestVerdict() }.getOrElse {
+                com.selinuxassistant.guardx.service.PlayIntegrityManager.IntegrityResult.Error(
+                    it.message ?: "Bilinmeyen hata"
+                )
+            }
+            _state.value = IntegrityUiState.Done(teeResult = teeResult, playIntegrity = piResult)
+        }
+    }
     fun reset() { _state.value = IntegrityUiState.Idle }
 }

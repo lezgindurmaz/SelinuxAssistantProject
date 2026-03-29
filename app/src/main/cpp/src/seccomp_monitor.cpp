@@ -102,7 +102,7 @@ static bool installSeccompFilter() {
     // ── BPF program ──────────────────────────────────────────────
     // ARM64 için tehlikeli syscall numaraları
     static const uint32_t DANGEROUS_NRS[] = {
-        101,  // ptrace
+        // 101,  // ptrace (Behavior monitor için izin verildi)
         105,  // setuid
         106,  // setgid
         117,  // setresuid
@@ -191,14 +191,12 @@ static bool installSigsysHandler() {
 //  Herkese açık init fonksiyonu
 //  Uygulama başlangıcında (JNI_OnLoad içinde) çağrılmalı
 // ──────────────────────────────────────────────────────────────────
-namespace AntiVirus {
-extern "C" bool initSelfProtection() {
+bool BehavioralAnalyzer::initSelfProtection() {
     if (!installSigsysHandler()) return false;
     if (!installSeccompFilter()) return false;
     LOGI("Öz-koruma aktif.");
     return true;
 }
-} // namespace AntiVirus
 
 // ──────────────────────────────────────────────────────────────────
 //  Seccomp destekleniyor mu? (Eski Android versiyonları için)

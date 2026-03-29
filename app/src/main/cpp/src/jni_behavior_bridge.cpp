@@ -59,7 +59,7 @@ Java_com_selinuxassistant_guardx_engine_NativeEngine_scanAllProcesses(
     BehaviorConfig cfg;
     cfg.durationMs   = static_cast<uint32_t>(durationMs);
     cfg.method       = MonitorMethod::METHOD_PROC_POLL;
-    cfg.pollIntervalUs = 1000;  // 1ms polling
+    cfg.pollIntervalUs = 5000;  // 5ms polling
 
     g_analyzer = std::make_unique<BehavioralAnalyzer>(cfg);
 

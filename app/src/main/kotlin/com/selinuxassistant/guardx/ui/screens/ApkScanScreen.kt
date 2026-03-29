@@ -183,11 +183,9 @@ private fun ApkResultsView(reports: List<ApkReport>, onDetail: (ApkReport) -> Un
 @Composable
 private fun ApkRow(report: ApkReport, onClick: () -> Unit) {
     FindingRow(
-        title    = report.appName.ifEmpty {
-                     report.packageName.substringAfterLast('.').replaceFirstChar { it.uppercase() }
-                       .ifEmpty { report.packageName }
-                   },
-        subtitle = "${report.packageName} • Skor: ${report.overallScore}",
+        title    = report.packageName.substringAfterLast('.').replaceFirstChar { it.uppercase() }
+                       .ifEmpty { report.packageName },
+        subtitle = "Skor: ${report.overallScore} • ${report.permissions.size} izin",
         level    = report.threatLevel,
         onClick  = onClick
     )
@@ -220,11 +218,10 @@ fun ApkDetailContent(report: ApkReport, modifier: Modifier = Modifier) {
                         })
                 }
                 Column {
-                    Text(report.appName.ifEmpty { report.packageName },
-                        style = MaterialTheme.typography.titleMedium,
+                    Text(report.packageName, style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold, maxLines = 1,
                         overflow = TextOverflow.Ellipsis)
-                    Text("${report.packageName} v${report.versionName}",
+                    Text("v${report.versionName}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(.5f))
                 }

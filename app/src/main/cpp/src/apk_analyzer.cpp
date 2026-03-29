@@ -195,7 +195,7 @@ void ApkAnalyzer::analyzeSignature(const std::string& apkPath,
                 // Son 4096 byte'ı oku ve "APK Sig Block 42" ara
                 char tail[4096];
                 struct stat st; fstat(fd, &st);
-                off_t off = std::max((off_t)0, (off_t)(st.st_size - 4096));
+                off_t off = (st.st_size > 4096) ? (st.st_size - 4096) : 0;
                 lseek(fd, off, SEEK_SET);
                 ssize_t n = read(fd, tail, sizeof(tail));
                 ::close(fd);
