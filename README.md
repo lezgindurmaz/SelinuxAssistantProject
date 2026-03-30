@@ -1,23 +1,30 @@
-# SelinuxAssistant
+# GuardX Antivirus
 
-A mobile application to defend your device with advanced scanning and root detection capabilities.
+GuardX is a powerful, native-core Android antivirus and system integrity protection tool. It combines high-performance C++ scanning with modern Android security APIs.
 
-## Features
-- **Fast Virus Scanning:** Efficiently scans files and directories for malware.
-- **Deep Root Detection:** Uses kernel-level checks to identify if a device is rooted or compromised.
-- **Modern UI:** Built with Jetpack Compose for a sleek and responsive user experience.
-- **Native Core:** High-performance C++ engine for deep analysis.
+## Key Features
 
-## Project Structure
-- `app/src/main/cpp`: C++ core engine and JNI bridge.
-- `app/src/main/kotlin`: Android application code (UI and Service layer).
-- `app/src/main/res`: Android resources.
+- **Multi-Engine Scanning**: Hybrid scanning using local signature database and cloud-based lookup.
+- **System Integrity Verification**:
+    - **TEE Hardware Attestation**: Verified boot and bootloader status checks via Android KeyStore.
+    - **Google Play Integrity**: Deep device and app integrity verdicts.
+- **Behavioral Monitor**: Real-time syscall analysis using ptrace and /proc polling to detect code injection, privilege escalation, and suspicious activity.
+- **Root & Hook Detection**: Multi-layered checks for su binaries, KernelSU, APatch, and common hooking frameworks.
+- **Self-Protection**: Integrated Seccomp-BPF filters to prevent tampering with the app process.
 
-## Build
-To build the project, use Android Studio or the Gradle wrapper:
+## Technical Details
+
+- **Language**: Kotlin (UI & Service), C++17 (Core Engine)
+- **UI Framework**: Jetpack Compose with Material 3
+- **NDK**: High-performance native analysis and kernel-level checks.
+- **Package Name**: `com.selinuxassistant.guardx`
+
+## Building
+
+To build the project, use the Gradle wrapper:
 ```bash
-gradle assembleDebug
+./gradlew assembleDebug
 ```
 
-## Release
-The latest APK can be found in the [Releases](https://github.com/lezgindurmaz/SelinuxAssistantProject/releases) section.
+## Disclaimer
+This project is for educational and security research purposes.
