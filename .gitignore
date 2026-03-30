@@ -1,7 +1,10 @@
-.gradle
+.gradle/
 build/
 app/build/
+.cxx/
+app/.cxx/
 *.apk
-.cxx
-.externalNativeBuild
+*.zip
 *.log
+GuardX-Organized/
+integrity_fix2.zip

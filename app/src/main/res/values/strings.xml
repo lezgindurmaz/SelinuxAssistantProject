@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">GuardX</string>
+    <string name="channel_scan">Tarama Durumu</string>
+    <string name="channel_threat">Tehdit Uyarısı</string>
+</resources>
