@@ -20,8 +20,8 @@ Open the project in Android Studio and sync its Gradle project. This repository 
 gradle assembleDebug
 ```
 
-## Releases
+## Releases and version status
 
-Published builds and historical source bundles are listed on the [Releases page](https://github.com/lezgindurmaz/SelinuxAssistantProject/releases).
+Published builds and historical source bundles are listed on the [Releases page](https://github.com/lezgindurmaz/SelinuxAssistantProject/releases). The current Android build configuration says `versionName 1.0` / `versionCode 1`, while the latest release tag is `2.0` and its asset is named `GuardX-final-3.zip`. The release label, asset name, and current app identity do not establish an unambiguous version mapping; no version number has been changed here.
 
 > This repository and the other GuardX/SelinuxAssistant repositories currently contain different code and release histories. Their versions should not be treated as interchangeable until a canonical source repository is selected.
